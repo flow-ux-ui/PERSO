@@ -286,27 +286,3 @@ ipcMain.handle('mirror:getStatus', () => ({ running: !!mirrorProc }));
 ipcMain.on('overlay:requestStartWatching', () => {
   if(configWin && !configWin.isDestroyed()) configWin.webContents.send('config:startWatching');
 });
-
-// Manual vertical resize (see overlay/index.html's .resize-top/.resize-bottom
-// handles). Frameless + transparent + always-on-top windows on Windows are
-// notoriously unreliable for native top/bottom edge resize (left/right work
-// fine through the OS border, top/bottom often silently don't) — so those
-// handles drive setBounds directly from the renderer instead of relying on
-// the native resize border at all.
-const OVERLAY_MIN_WIDTH = 200;
-const OVERLAY_MIN_HEIGHT = 120;
-
-ipcMain.handle('overlay:getBounds', () => {
-  if(!overlayWin || overlayWin.isDestroyed()) return null;
-  return overlayWin.getBounds();
-});
-
-ipcMain.on('overlay:setBounds', (_event, bounds) => {
-  if(!overlayWin || overlayWin.isDestroyed() || !bounds) return;
-  overlayWin.setBounds({
-    x: Math.round(bounds.x),
-    y: Math.round(bounds.y),
-    width: Math.max(OVERLAY_MIN_WIDTH, Math.round(bounds.width)),
-    height: Math.max(OVERLAY_MIN_HEIGHT, Math.round(bounds.height)),
-  });
-});

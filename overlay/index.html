@@ -32,21 +32,23 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        // blablablabla
-        /* extra right padding keeps the Start/Stop button clear of the
-       always-on-top drag handle window floating over the card's
-       top-right corner (see HANDLE_SIZE/HANDLE_MARGIN in main.js) */ /* extra right padding keeps the Start/Stop button clear of the
-   always-on-top drag handle window floating over the card's
-   top-right corner (see HANDLE_SIZE/HANDLE_MARGIN in main.js) */
-        padding:8px 22px 6px 10px;
+        /* left padding gives "Ayenyzer" breathing room from the card edge;
+           right padding keeps the Start/Stop button clear of the
+           always-on-top drag-handle window floating over the card's
+           top-right corner (HANDLE_SIZE 18 + HANDLE_MARGIN 6 in main.js) */
+        padding:8px 26px 6px 14px;
         font-size: 11px;
         letter-spacing: .06em;
         text-transform: uppercase;
         color: var(--muted);
         flex: none;
     }
-  .head .brand{color:var(--dmg); font-weight:700;}
-  .head .meta{font-family:'Consolas','Space Mono',monospace; font-size:10.5px;}
+  .head .brand{color:var(--dmg); font-weight:700; flex:none;}
+  .head .meta{
+    font-family:'Consolas','Space Mono',monospace; font-size:10.5px;
+    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    text-align:right;
+  }
   .dot{
     position:absolute;
     right:4px;
@@ -86,22 +88,10 @@
 
   .empty{padding:14px 12px; font-size:11.5px; color:var(--muted); text-align:center;}
   .hint{padding:0 12px 10px; font-size:9.5px; color:var(--muted); text-align:center; opacity:.75;}
-
-  .resize-edge{
-    -webkit-app-region:no-drag;
-    position:absolute;
-    left:6px; right:6px;
-    height:6px;
-    cursor:ns-resize;
-    z-index:10;
-  }
-  .resize-top{top:0;}
-  .resize-bottom{bottom:0;}
 </style>
 </head>
 <body>
   <div class="card">
-    <div class="resize-edge resize-top" id="resizeTop" title="Drag to resize"></div>
     <div class="head">
       <span class="brand">Ayenyzer</span>
       <span class="meta" id="meta">—</span>
@@ -111,7 +101,6 @@
       <div class="empty">Waiting for a fight… start Live mode in the config window.</div>
     </div>
     <span class="dot" id="modeDot" title="Ctrl+Shift+O to toggle click-through"></span>
-    <div class="resize-edge resize-bottom" id="resizeBottom" title="Drag to resize"></div>
   </div>
 
 <script>
@@ -146,52 +135,6 @@
 
   mirrorBtn.addEventListener('mouseenter', () => window.api.setOverlayHover(true));
   mirrorBtn.addEventListener('mouseleave', () => window.api.setOverlayHover(false));
-
-  // Vertical resize from the top and bottom edges. Native OS edge-resize on
-  // this window is unreliable for top/bottom on Windows (frameless +
-  // transparent + always-on-top windows commonly lose vertical resize while
-  // left/right keep working), so these handles compute the new bounds
-  // themselves and push them straight to the window instead of relying on
-  // the native resize border.
-  function setupResizeEdge(el, edge){
-    let dragging = false;
-    let startScreenY = 0;
-    let startBounds = null;
-
-    el.addEventListener('mouseenter', () => { if(!dragging) window.api.setOverlayHover(true); });
-    el.addEventListener('mouseleave', () => { if(!dragging) window.api.setOverlayHover(false); });
-
-    el.addEventListener('mousedown', async (e) => {
-      dragging = true;
-      startScreenY = e.screenY;
-      startBounds = await window.api.getOverlayBounds();
-      window.api.setOverlayHover(true);
-      e.preventDefault();
-    });
-
-    window.addEventListener('mousemove', (e) => {
-      if(!dragging || !startBounds) return;
-      const deltaY = e.screenY - startScreenY;
-      let { x, y, width, height } = startBounds;
-      if(edge === 'top'){
-        const newHeight = Math.max(120, height - deltaY);
-        y = y + (height - newHeight);
-        height = newHeight;
-      }else{
-        height = Math.max(120, height + deltaY);
-      }
-      window.api.setOverlayBounds({ x, y, width, height });
-    });
-
-    window.addEventListener('mouseup', () => {
-      if(!dragging) return;
-      dragging = false;
-      startBounds = null;
-      window.api.setOverlayHover(false);
-    });
-  }
-  setupResizeEdge(document.getElementById('resizeTop'), 'top');
-  setupResizeEdge(document.getElementById('resizeBottom'), 'bottom');
 
   window.api.onOverlayMode((interactive) => {
     modeDot.classList.toggle('interactive', interactive);

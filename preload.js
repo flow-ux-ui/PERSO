@@ -30,10 +30,4 @@ contextBridge.exposeInMainWorld('api', {
   // Overlay Start button -> config window's "Watch File (Live)" flow.
   requestStartWatching: () => ipcRenderer.send('overlay:requestStartWatching'),
   onRequestStartWatching: (cb) => ipcRenderer.on('config:startWatching', () => cb()),
-
-  // Manual vertical resize (native top/bottom edge resize is unreliable on
-  // frameless/transparent/always-on-top windows) — the resize handles read
-  // the current bounds, then push new ones as the user drags.
-  getOverlayBounds: () => ipcRenderer.invoke('overlay:getBounds'),
-  setOverlayBounds: (bounds) => ipcRenderer.send('overlay:setBounds', bounds),
 });
