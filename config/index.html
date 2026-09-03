@@ -601,8 +601,19 @@ function processLines(lines, state, casterRe, effectRe, deathRe, dedupOn, dedupW
       if(fight.startTs === null) fight.startTs = lineTs;
       fight.endTs = lineTs;
     }
+    // Caster lines are never deduped, even if dedup is on. WAKFU sometimes
+    // re-logs a whole recent burst verbatim (e.g. after a brief reconnect),
+    // and later lines in that resent burst can drift past the dedup window
+    // from their sibling while the early ones don't — so a repeated caster
+    // line can get silently dropped here while the damage lines a moment
+    // later escape the window and still get processed. That leaves
+    // fight.lastCaster stale, misattributing every one of those damage
+    // lines to whoever cast last for real, until the next line that does
+    // get through. Reprocessing a duplicate caster line is harmless (it
+    // just re-confirms who's already acting); dropping one isn't.
+    const isCasterLine = casterRe.test(line);
     let isDup = false;
-    if(dedupOn){
+    if(dedupOn && !isCasterLine){
       if(lineTs === null){
         // No timestamp to work with (e.g. pasted text) — fall back to a
         // simple "same as the line right before it" check.
@@ -812,8 +823,18 @@ function finalizeAndRender(state, statusHtml){
   activeState = state;
   renderHiddenChips();
   const fights = state.fights && state.fights.length ? state.fights : [createFight()];
-  let idx = (viewFightIndex === null || viewFightIndex >= fights.length) ? fights.length - 1 : viewFightIndex;
-  if(idx < 0) idx = 0;
+  let idx;
+  if(viewFightIndex !== null && viewFightIndex < fights.length){
+    idx = viewFightIndex; // an explicit choice (Prev/Next/Jump) — respect it even if empty
+  }else{
+    // Auto-follow ("always show the latest fight"): the very last fight can
+    // be empty — trailing noise after the real fight ended (offline), or a
+    // boundary marker that just fired with nothing recorded yet (live).
+    // Walk back to the most recent fight that actually has data instead of
+    // stranding on a blank "Nothing matched" screen with no nav to escape it.
+    idx = fights.length - 1;
+    while(idx > 0 && fights[idx].characters.size === 0) idx--;
+  }
   const fight = fights[idx];
   const characters = fight.characters;
   // Every fight's lines carry their own fightIndex (see pushMeta) — the log
@@ -824,6 +845,15 @@ function finalizeAndRender(state, statusHtml){
 
   if(characters.size === 0){
     els.status.innerHTML = statusHtml || '<span class="warn">Nothing matched. Adjust the regex patterns and try again.</span>';
+    if(fights.length > 1){
+      // renderMain() (which normally builds this nav) is skipped entirely
+      // below — without this, landing here (e.g. via "Jump to first" onto
+      // pre-combat chatter) would strand the user with no way back to a
+      // fight that actually has data.
+      els.main.innerHTML = renderFightNav(idx, fights.length, fight.startTs, fight.endTs) +
+        '<div class="empty"><div class="big">Nothing matched in this fight</div><div class="small">Try Prev/Next fight above, or adjust the regex patterns in the sidebar.</div></div>';
+      wireFightNavButtons();
+    }
     renderLogPreview(previewMeta);
     pushOverlaySnapshot(null);
     return;
@@ -1343,14 +1373,12 @@ function initPanelDragAndDrop(){
   });
 }
 
-function renderMain(){
-  const {characters, turnsSorted, fightIndex, fightCount, startTs, endTs} = lastParsed;
-  const sortedByDmg = Array.from(characters.entries()).sort((a,b)=> total(b[1].dmg) - total(a[1].dmg));
-  const partyDmg = sortedByDmg.reduce((s,[,c])=>s+total(c.dmg),0);
-  const partyHeal = sortedByDmg.reduce((s,[,c])=>s+total(c.heal),0);
-  const topDmg = sortedByDmg[0];
-  const topHeal = Array.from(characters.entries()).sort((a,b)=> total(b[1].heal) - total(a[1].heal))[0];
-
+// Built and wired independently from renderMain() so Prev/Next/Jump stay
+// reachable even when the currently viewed fight has no characters (e.g.
+// the very latest fight is trailing noise, or "Jump to first" lands on
+// pre-combat chatter) — renderMain() itself is skipped entirely in that
+// case, and this nav is the only way back to a fight that actually has data.
+function renderFightNav(fightIndex, fightCount, startTs, endTs){
   const timeRange = startTs !== null ? `<span style="font-family:'Space Mono',monospace; font-size:11px; color:var(--muted);">${formatClockTime(startTs)} – ${formatClockTime(endTs)}${formatDuration(startTs,endTs) ? ' ('+formatDuration(startTs,endTs)+')' : ''}</span>` : '';
 
   const navPanel = fightCount > 1 ? `
@@ -1369,7 +1397,29 @@ function renderMain(){
     </div>
   ` : '';
 
-  const fightNav = navPanel + timePanel;
+  return navPanel + timePanel;
+}
+
+function wireFightNavButtons(){
+  const jumpFirstFightBtn = document.getElementById('jumpFirstFightBtn');
+  const prevFightBtn = document.getElementById('prevFightBtn');
+  const nextFightBtn = document.getElementById('nextFightBtn');
+  const jumpLatestFightBtn = document.getElementById('jumpLatestFightBtn');
+  jumpFirstFightBtn && jumpFirstFightBtn.addEventListener('click', jumpToFirstFight);
+  prevFightBtn && prevFightBtn.addEventListener('click', ()=> stepFight(-1));
+  nextFightBtn && nextFightBtn.addEventListener('click', ()=> stepFight(1));
+  jumpLatestFightBtn && jumpLatestFightBtn.addEventListener('click', jumpToLatestFight);
+}
+
+function renderMain(){
+  const {characters, turnsSorted, fightIndex, fightCount, startTs, endTs} = lastParsed;
+  const sortedByDmg = Array.from(characters.entries()).sort((a,b)=> total(b[1].dmg) - total(a[1].dmg));
+  const partyDmg = sortedByDmg.reduce((s,[,c])=>s+total(c.dmg),0);
+  const partyHeal = sortedByDmg.reduce((s,[,c])=>s+total(c.heal),0);
+  const topDmg = sortedByDmg[0];
+  const topHeal = Array.from(characters.entries()).sort((a,b)=> total(b[1].heal) - total(a[1].heal))[0];
+
+  const fightNav = renderFightNav(fightIndex, fightCount, startTs, endTs);
 
   const panelHtml = {
     'char-breakdown': `
@@ -1452,14 +1502,7 @@ function renderMain(){
   document.getElementById('tgDmg').addEventListener('click', ()=>{ metric='dmg'; updateToggle(); try{ renderMetricViews(); }catch(e){ console.error(e); } });
   document.getElementById('tgHeal').addEventListener('click', ()=>{ metric='heal'; updateToggle(); try{ renderMetricViews(); }catch(e){ console.error(e); } });
 
-  const jumpFirstFightBtn = document.getElementById('jumpFirstFightBtn');
-  const prevFightBtn = document.getElementById('prevFightBtn');
-  const nextFightBtn = document.getElementById('nextFightBtn');
-  const jumpLatestFightBtn = document.getElementById('jumpLatestFightBtn');
-  jumpFirstFightBtn && jumpFirstFightBtn.addEventListener('click', jumpToFirstFight);
-  prevFightBtn && prevFightBtn.addEventListener('click', ()=> stepFight(-1));
-  nextFightBtn && nextFightBtn.addEventListener('click', ()=> stepFight(1));
-  jumpLatestFightBtn && jumpLatestFightBtn.addEventListener('click', jumpToLatestFight);
+  wireFightNavButtons();
 
   // table (always both metrics)
   const tbody = document.getElementById('statTable');
