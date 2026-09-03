@@ -816,10 +816,15 @@ function finalizeAndRender(state, statusHtml){
   if(idx < 0) idx = 0;
   const fight = fights[idx];
   const characters = fight.characters;
+  // Every fight's lines carry their own fightIndex (see pushMeta) — the log
+  // preview only needs the fight currently being viewed, not the whole
+  // multi-fight session (which can be tens of thousands of lines across a
+  // long play session and made the preview panel crawl).
+  const previewMeta = state.lineMeta.filter(lm => lm.fightIndex === idx);
 
   if(characters.size === 0){
     els.status.innerHTML = statusHtml || '<span class="warn">Nothing matched. Adjust the regex patterns and try again.</span>';
-    renderLogPreview(state.lineMeta);
+    renderLogPreview(previewMeta);
     pushOverlaySnapshot(null);
     return;
   }
@@ -845,7 +850,7 @@ function finalizeAndRender(state, statusHtml){
     console.error('renderMain failed:', err);
     els.status.innerHTML += ` <span class="warn">(A chart/table failed to render: ${err.message})</span>`;
   }
-  renderLogPreview(state.lineMeta);
+  renderLogPreview(previewMeta);
   pushOverlaySnapshot({characters, turnsSorted, turn: fight.turn, fightIndex: idx, fightCount: fights.length});
 }
 
@@ -1593,6 +1598,13 @@ function renderMetricViews(){
   });
 }
 
+// Rebuilds a DOM node per line on every render — parse, fight switch, and
+// every 1.5s live-poll tick. Uncapped, a single busy fight (chat/engine
+// noise included, not just combat lines) can hit tens of thousands of
+// lines and make the whole window stutter. Only the last N are shown; the
+// stats/charts above are computed from the full data regardless.
+const LOG_PREVIEW_MAX_LINES = 3000;
+
 function renderLogPreview(lineMeta){
   let container = document.getElementById('logPreview');
   if(!container){
@@ -1606,7 +1618,15 @@ function renderLogPreview(lineMeta){
   }
   container.innerHTML = '';
   const frag = document.createDocumentFragment();
-  lineMeta.forEach(lm=>{
+  let toRender = lineMeta;
+  if(lineMeta.length > LOG_PREVIEW_MAX_LINES){
+    toRender = lineMeta.slice(-LOG_PREVIEW_MAX_LINES);
+    const notice = document.createElement('div');
+    notice.className = 'ln other';
+    notice.textContent = `… showing the last ${LOG_PREVIEW_MAX_LINES.toLocaleString()} of ${lineMeta.length.toLocaleString()} lines (older lines omitted here for performance — stats/charts above still cover everything).`;
+    frag.appendChild(notice);
+  }
+  toRender.forEach(lm=>{
     if(lm.type === 'blank'){ frag.appendChild(document.createElement('br')); return; }
     const div = document.createElement('div');
     let cls = 'ln';
