@@ -843,6 +843,10 @@ function jumpToLatestFight(){
   viewFightIndex = null;
   if(activeState) finalizeAndRender(activeState);
 }
+function jumpToFirstFight(){
+  viewFightIndex = 0;
+  if(activeState) finalizeAndRender(activeState);
+}
 
 function pad2(n){ return String(n).padStart(2,'0'); }
 
@@ -1281,6 +1285,7 @@ function renderMain(){
 
   const navPanel = fightCount > 1 ? `
     <div class="panel" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:12px 16px;">
+      <button id="jumpFirstFightBtn" class="fight-nav-btn" ${fightIndex<=0?'disabled':''}>Jump to first</button>
       <button id="prevFightBtn" class="fight-nav-btn" ${fightIndex<=0?'disabled':''}>◀ Prev fight</button>
       <span style="font-family:'Space Mono',monospace; font-size:12px; color:var(--muted); min-width:110px; text-align:center;">Fight ${fightIndex+1} of ${fightCount}</span>
       <button id="nextFightBtn" class="fight-nav-btn" ${fightIndex>=fightCount-1?'disabled':''}>Next fight ▶</button>
@@ -1375,9 +1380,11 @@ function renderMain(){
   document.getElementById('tgDmg').addEventListener('click', ()=>{ metric='dmg'; updateToggle(); try{ renderMetricViews(); }catch(e){ console.error(e); } });
   document.getElementById('tgHeal').addEventListener('click', ()=>{ metric='heal'; updateToggle(); try{ renderMetricViews(); }catch(e){ console.error(e); } });
 
+  const jumpFirstFightBtn = document.getElementById('jumpFirstFightBtn');
   const prevFightBtn = document.getElementById('prevFightBtn');
   const nextFightBtn = document.getElementById('nextFightBtn');
   const jumpLatestFightBtn = document.getElementById('jumpLatestFightBtn');
+  jumpFirstFightBtn && jumpFirstFightBtn.addEventListener('click', jumpToFirstFight);
   prevFightBtn && prevFightBtn.addEventListener('click', ()=> stepFight(-1));
   nextFightBtn && nextFightBtn.addEventListener('click', ()=> stepFight(1));
   jumpLatestFightBtn && jumpLatestFightBtn.addEventListener('click', jumpToLatestFight);
