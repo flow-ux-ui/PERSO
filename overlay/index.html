@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ayenyzer overlay</title>
+<style>
+  :root{
+    --dmg:#e2493d;
+    --heal:#6fae7a;
+    --text:#e9e7e0;
+    --muted:#9a9db0;
+  }
+  html,body{margin:0; height:100%; background:transparent; overflow:hidden;}
+  *{box-sizing:border-box;}
+  body{font-family:'Segoe UI',system-ui,sans-serif; color:var(--text); -webkit-user-select:none; user-select:none;}
+
+  .card{
+    margin:8px;
+    background:rgba(12,14,19,0.78);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:10px;
+    backdrop-filter:blur(2px);
+    display:flex;
+    flex-direction:column;
+    max-height:calc(100vh - 16px);
+    overflow:hidden;
+  }
+
+  .head{
+    -webkit-app-region:drag;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 10px 6px;
+    font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted);
+    flex:none;
+  }
+  .head .brand{color:var(--dmg); font-weight:700;}
+  .head .meta{font-family:'Consolas','Space Mono',monospace; font-size:10.5px;}
+  .dot{width:7px; height:7px; border-radius:50%; flex:none; margin-left:6px; background:#565b6b;}
+  .dot.interactive{background:#d1a24a;}
+
+  .rows{padding:2px 10px 10px; overflow-y:auto; flex:1;}
+  .row{margin:5px 0;}
+  .row .top{display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:2px;}
+  .row .name{font-weight:600;}
+  .row .val{font-family:'Consolas','Space Mono',monospace; color:var(--muted);}
+  .bar-track{height:7px; border-radius:4px; background:rgba(255,255,255,0.07); overflow:hidden;}
+  .bar-fill{height:100%; border-radius:4px;}
+
+  .empty{padding:14px 12px; font-size:11.5px; color:var(--muted); text-align:center;}
+  .hint{padding:0 12px 10px; font-size:9.5px; color:var(--muted); text-align:center; opacity:.75;}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <span class="brand">Ayenyzer</span>
+      <span class="meta" id="meta">—</span>
+      <span class="dot" id="modeDot" title="Ctrl+Shift+O to toggle click-through"></span>
+    </div>
+    <div class="rows" id="rows">
+      <div class="empty">Waiting for a fight… start Live mode in the config window.</div>
+    </div>
+  </div>
+
+<script>
+  const rowsEl = document.getElementById('rows');
+  const metaEl = document.getElementById('meta');
+  const modeDot = document.getElementById('modeDot');
+
+  window.api.onOverlayMode((interactive) => {
+    modeDot.classList.toggle('interactive', interactive);
+    modeDot.title = interactive
+      ? 'Interactive — drag/resize me. Ctrl+Shift+O to go click-through again.'
+      : 'Click-through — Ctrl+Shift+O to make me interactive.';
+  });
+
+  window.api.onOverlayUpdate((data) => {
+    if(!data || !data.entries || !data.entries.length){
+      metaEl.textContent = '—';
+      rowsEl.innerHTML = '<div class="empty">Waiting for a fight… start Live mode in the config window.</div>';
+      return;
+    }
+    metaEl.textContent = (data.fightLabel ? data.fightLabel + ' · ' : '') + 'Turn ' + (data.turn || 1);
+    const top = data.entries[0].dmg || 1;
+    rowsEl.innerHTML = data.entries.map(c => {
+      const pct = Math.max(2, Math.round((c.dmg / top) * 100));
+      return `
+        <div class="row">
+          <div class="top">
+            <span class="name" style="color:${c.color}">${escapeHtml(c.name)}</span>
+            <span class="val">${c.dmg.toLocaleString()}</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%; background:${c.color}"></div></div>
+        </div>`;
+    }).join('');
+  });
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ayenyzer : Combat log analyzer (config)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+  // Fallback: if the primary CDN failed to load Chart.js, try a second CDN.
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0c0e13;
+    --panel:#151822;
+    --panel-2:#1b1f2b;
+    --border:#272c3a;
+    --text:#e9e7e0;
+    --muted:#838798;
+    --dim:#565b6b;
+    --dmg:#e2493d;
+    --heal:#6fae7a;
+    --turn:#d1a24a;
+    --cast:#5c9ee0;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh;}
+  .wrap{display:grid; grid-template-columns:360px 1fr; gap:1px; background:var(--border); min-height:100vh;}
+  @media (max-width: 940px){ .wrap{grid-template-columns:1fr;} }
+  aside, main{background:var(--bg);}
+  aside{padding:22px 20px 40px;}
+  main{padding:22px 26px 40px;}
+
+  .brand{font-family:'Oswald',sans-serif; font-weight:700; font-size:20px; letter-spacing:.1em; text-transform:uppercase; color:var(--dmg); margin:0 0 4px;}
+  h1{font-family:'Oswald',sans-serif; font-weight:600; font-size:22px; margin:0 0 22px; color:var(--text);}
+  .section-label{font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:22px 0 10px; display:flex; align-items:center; gap:8px;}
+  .section-label:first-of-type{margin-top:0;}
+  .section-label::after{content:""; flex:1; height:1px; background:var(--border);}
+  .section-label.collapsible{cursor:pointer; user-select:none;}
+  .section-label.collapsible:hover{color:#c7cad6;}
+  .section-label .chev{font-size:9px; opacity:.65; transition:transform .15s ease; flex:none;}
+  .section-label.collapsible.open .chev{transform:rotate(90deg);}
+  .section-body{overflow:hidden;}
+  .section-body.collapsed{display:none;}
+
+  .dropzone{border:1.5px dashed var(--border); border-radius:6px; padding:20px 14px; text-align:center; cursor:pointer; transition:border-color .15s, background .15s; font-size:13px; color:var(--muted);}
+  .dropzone:hover, .dropzone.drag{border-color:var(--dmg); background:rgba(226,73,61,0.06); color:var(--text);}
+  .dropzone strong{color:var(--text); display:block; margin-bottom:4px; font-size:14px;}
+  input[type=file]{display:none;}
+
+  textarea{width:100%; min-height:100px; background:var(--panel); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'Space Mono',monospace; font-size:11px; padding:10px; resize:vertical; margin-top:10px;}
+  textarea:focus{outline:1px solid var(--dmg);}
+
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:11px; color:var(--muted); margin-bottom:5px; font-family:'Space Mono',monospace;}
+  .field input[type=text]{width:100%; background:var(--panel); border:1px solid var(--border); border-radius:5px; color:var(--text); font-family:'Space Mono',monospace; font-size:11px; padding:8px 9px;}
+  .field input[type=text]:focus{outline:1px solid var(--dmg); border-color:var(--dmg);}
+  .field .hint{font-size:10.5px; color:var(--dim); margin-top:4px; line-height:1.4;}
+  .field .hint code{color:var(--muted);}
+
+  .btn-row{display:flex; gap:8px; margin-top:14px;}
+  button{font-family:'Oswald',sans-serif; font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase; border-radius:5px; padding:10px 14px; cursor:pointer; border:1px solid var(--border); background:var(--panel-2); color:var(--text); flex:1; transition:background .15s, border-color .15s;}
+  button:disabled{opacity:.35; cursor:not-allowed;}
+  .fight-nav-btn{flex:none; width:auto; min-width:120px; padding:6px 12px; font-size:11px; text-align:center;}
+  button.primary{background:var(--dmg); border-color:var(--dmg); color:#fff;}
+  button.primary:hover{background:#c93e33;}
+  button:not(.primary):hover{border-color:var(--muted);}
+
+  .status{margin-top:12px; font-size:11px; font-family:'Space Mono',monospace; color:var(--muted); line-height:1.5;}
+  .status .ok{color:var(--heal);}
+  .status .warn{color:var(--turn);}
+
+  .roster{margin-top:8px; display:flex; flex-direction:column; gap:6px;}
+  .roster-row{display:flex; align-items:center; gap:8px; font-size:12px; background:var(--panel); border:1px solid var(--border); border-radius:5px; padding:6px 9px;}
+  .swatch{width:11px; height:11px; border-radius:3px; flex:none;}
+  .roster-row .name{flex:1; font-family:'Space Mono',monospace; font-size:11.5px;}
+  .roster-row .tot{color:var(--muted); font-family:'Space Mono',monospace; font-size:10.5px; text-align:right;}
+  .hide-x{background:none; border:none; color:var(--muted); cursor:pointer; font-size:14px; line-height:1; padding:2px 6px; border-radius:4px; opacity:.45; flex:none;}
+  .hide-x:hover{opacity:1; color:#e2493d; background:#272c3a;}
+  .hidden-chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .hidden-chip{display:inline-flex; align-items:center; gap:4px; background:#272c3a; border:1px solid var(--border); border-radius:20px; padding:3px 4px 3px 10px; font-size:11px; color:#c7cad6; font-family:'Inter',sans-serif;}
+  .hidden-chip button{background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; line-height:1; padding:2px 6px; border-radius:50%;}
+  .hidden-chip button:hover{color:#fff; background:#3a3f4f;}
+
+  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:6px; overflow:hidden; margin-bottom:26px;}
+  @media (max-width:700px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--panel); padding:16px 16px;}
+  .stat .k{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-family:'Space Mono',monospace; margin-bottom:6px;}
+  .stat .v{font-family:'Oswald',sans-serif; font-weight:600; font-size:24px; color:var(--text);}
+  .stat .v small{font-size:12px; color:var(--muted); font-weight:400;}
+  .stat.dmg .v{color:var(--dmg);}
+  .stat.heal .v{color:var(--heal);}
+
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:18px 20px 20px; margin-bottom:22px; position:relative;}
+  .drag-handle{position:absolute; top:14px; right:16px; cursor:grab; color:var(--muted); font-size:15px; padding:4px 8px; border-radius:4px; user-select:none; line-height:1; letter-spacing:2px;}
+  .drag-handle.inline{position:static; margin:0 2px;}
+  .drag-handle:hover{color:#c7cad6; background:#272c3a;}
+  .panel.dragging{opacity:.35;}
+  .panel.drag-over-top{box-shadow:0 -3px 0 0 #e2493d;}
+  .panel.drag-over-bottom{box-shadow:0 3px 0 0 #e2493d;}
+  .panel-head{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px;}
+  .panel h2{font-family:'Oswald',sans-serif; font-size:14px; letter-spacing:.05em; font-weight:600; text-transform:uppercase; margin:0 0 4px; color:var(--text);}
+  .panel .sub{font-size:11.5px; color:var(--muted); margin:0;}
+
+  .toggle{display:flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; flex:none;}
+  .toggle button{flex:none; border:none; border-radius:0; background:var(--panel-2); padding:7px 14px; font-size:11px;}
+  .toggle button.active.dmg-mode{background:var(--dmg); color:#fff;}
+  .toggle button.active.heal-mode{background:var(--heal); color:#0c0e13;}
+
+  .comp-bar{display:flex; height:34px; border-radius:5px; overflow:hidden; border:1px solid var(--border);}
+  .comp-seg{display:flex; align-items:center; justify-content:center; font-family:'Space Mono',monospace; font-size:11px; color:#0c0e13; font-weight:700; min-width:2px; transition:filter .15s; white-space:nowrap; overflow:hidden;}
+  .comp-seg:hover{filter:brightness(1.15);}
+  .comp-legend{display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:14px;}
+  .comp-legend .item{display:flex; align-items:center; gap:7px; font-size:12px;}
+  .comp-legend .item .name{font-family:'Space Mono',monospace;}
+  .comp-legend .item .pct{color:var(--muted);}
+
+  table{width:100%; border-collapse:collapse; margin-top:4px;}
+  th,td{text-align:left; padding:9px 8px; font-size:12px; border-bottom:1px solid var(--border);}
+  th{font-family:'Oswald',sans-serif; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); font-weight:600;}
+  td.num, th.num{text-align:right; font-family:'Space Mono',monospace;}
+  tr:last-child td{border-bottom:none;}
+  td .char-cell{display:flex; align-items:center; gap:8px;}
+  th.grp-dmg{color:var(--dmg);}
+  th.grp-heal{color:var(--heal);}
+
+  .chart-wrap{position:relative; height:320px;}
+
+  .log-preview{max-height:240px; overflow-y:auto; background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:10px 12px; font-family:'Space Mono',monospace; font-size:10.5px; line-height:1.7; margin-top:8px;}
+  .log-preview .ln{white-space:pre-wrap; word-break:break-word;}
+  .log-preview .ln.turn{color:var(--turn); font-weight:600;}
+  .log-preview .ln.cast{color:var(--cast);}
+  .log-preview .ln.other{color:var(--dim);}
+  .log-preview .ln.dup{color:var(--dim); text-decoration:line-through; opacity:.6;}
+  .log-preview .ln.start{color:var(--heal); font-weight:700;}
+  .log-preview .ln.stop{color:var(--dmg); font-weight:700;}
+  .log-preview .ln.skip{color:var(--dim); opacity:.45;}
+  .log-preview .ln.channel{color:var(--dim); opacity:.3;}
+  .log-preview .ln.hidden{color:var(--dim); text-decoration:line-through; font-style:italic; opacity:.55;}
+  .log-preview .ln.boundary{color:#c084fc; font-weight:700;}
+
+  .empty{text-align:center; padding:70px 20px; color:var(--muted);}
+  .empty .big{font-family:'Oswald',sans-serif; font-size:18px; color:var(--text); margin-bottom:8px;}
+  .empty .small{font-size:12.5px; max-width:440px; margin:0 auto; line-height:1.6;}
+
+  ::-webkit-scrollbar{width:9px; height:9px;}
+  ::-webkit-scrollbar-track{background:var(--panel);}
+  ::-webkit-scrollbar-thumb{background:var(--border); border-radius:5px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside>
+    <p class="brand">Ayenyzer</p>
+    <h1>Combat log analyzer</h1>
+
+    <div class="section-label collapsible open" data-target="sec-offline">Offline mode <span class="chev">▸</span></div>
+    <div class="section-body" id="sec-offline">
+    <div class="dropzone" id="dropzone">
+      <strong>Drop a .txt / .log file here</strong>
+      or click to browse
+      <input type="file" id="fileInput" accept=".txt,.log,text/plain">
+    </div>
+    <textarea id="rawText" placeholder="…or paste your combat log here"></textarea>
+
+    <div class="btn-row">
+      <button class="primary" id="parseBtn">Parse Log</button>
+      <button id="sampleBtn">Load Sample</button>
+    </div>
+    <div class="status" id="status">No log parsed yet.</div>
+    </div>
+
+    <div class="section-label collapsible open" data-target="sec-live">Live mode <span class="chev">▸</span></div>
+    <div class="section-body" id="sec-live">
+    <div class="btn-row" style="margin-top:0;">
+      <button id="watchBtn">Watch File (Live)</button>
+      <button id="stopWatchBtn" style="display:none;">Stop Watching</button>
+      <button id="resetWatchBtn" style="display:none;">Reset Tracking</button>
+    </div>
+    <div class="status" id="liveStatus"></div>
+    </div>
+
+    <div class="section-label collapsible open" data-target="sec-overlay">In-game overlay <span class="chev">▸</span></div>
+    <div class="section-body" id="sec-overlay">
+    <div class="field" style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+      <input type="checkbox" id="overlayEnabled" checked style="width:14px; height:14px; accent-color:#e2493d;">
+      <label for="overlayEnabled" style="margin:0; font-size:11.5px; color:var(--muted); font-family:'Inter',sans-serif;">Push live stats to the overlay window</label>
+    </div>
+    <div class="hint">
+      <b>Ctrl+Shift+O</b> toggles the overlay between click-through (lets clicks pass through to the game) and interactive (drag/resize it). <b>Ctrl+Shift+H</b> shows/hides it entirely. The overlay only shows the fight currently being viewed here (Prev/Next fight still works).
+    </div>
+    </div>
+
+    <div class="section-label collapsible" data-target="sec-parsing">Parsing rules <span class="chev">▸</span></div>
+    <div class="section-body collapsed" id="sec-parsing">
+    <div class="field">
+      <label>Caster line pattern (regex)</label>
+      <input type="text" id="casterPattern" value="(?&lt;caster&gt;[^:\]]+?) lance le sort (?&lt;spell&gt;.+)$">
+      <div class="hint">Marks who is acting. Every damage/heal line that follows is credited to this caster, until the next match. Needs a <code>caster</code> group.</div>
+    </div>
+    <div class="field">
+      <label>HP change pattern (regex)</label>
+      <input type="text" id="effectPattern" value="(?&lt;target&gt;[^:\]]+?): (?&lt;sign&gt;\+-|[+-])(?&lt;amount&gt;[\d\s]+) ?PV\b">
+      <div class="hint">Matches e.g. <code>Ayendas: +1 810 PV (Feu)</code> (heal) or <code>Nox: -72 082 PV (Air)</code> (damage). Needs <code>target</code>, <code>sign</code>, <code>amount</code> groups. Space thousand-separators are handled automatically.</div>
+    </div>
+    <div class="field">
+      <label>Turn boundary pattern (regex)</label>
+      <input type="text" id="turnPattern" value="secondes report[ée]e?s? pour le tour suivant">
+      <div class="hint">Each match starts a new turn. Add a <code>(?&lt;num&gt;\d+)</code> group instead if your log states explicit turn numbers.</div>
+    </div>
+    </div>
+
+    <div class="section-label collapsible" data-target="sec-channel">Channel filter (optional) <span class="chev">▸</span></div>
+    <div class="section-body collapsed" id="sec-channel">
+    <div class="field">
+      <label>Combat channel marker</label>
+      <input type="text" id="channelMarker" value="[Information (combat)]">
+      <div class="hint">Lines that don't contain this exact text are ignored for damage/turn parsing — filters out chat (Commerce, Guilde, Communauté…), engine/Lua noise, etc. Start/stop keywords below are still recognized on <em>every</em> line regardless of channel, since players usually type those in chat, not in the combat channel. Leave empty to parse every line like before.</div>
+    </div>
+    </div>
+
+    <div class="section-label collapsible" data-target="sec-window">Combat window (optional) <span class="chev">▸</span></div>
+    <div class="section-body collapsed" id="sec-window">
+    <div class="field">
+      <label>Start keyword</label>
+      <input type="text" id="startKeyword" placeholder="e.g. start">
+      <div class="hint">Matches any line ending in <code>: keyword</code>, e.g. typing <code>start</code> catches <code>Ash: start</code>. Everything before this line is ignored. Leave empty to parse from the first line.</div>
+    </div>
+    <div class="field">
+      <label>Stop keyword</label>
+      <input type="text" id="stopKeyword" placeholder="e.g. stop">
+      <div class="hint">Same idea, e.g. <code>Ash: stop</code>. Everything after is ignored, until the next start keyword (if any) turns it back on. Leave empty to parse until the end.</div>
+    </div>
+    </div>
+
+    <div class="section-label collapsible" data-target="sec-boundary">Combat boundary (optional) <span class="chev">▸</span></div>
+    <div class="section-body collapsed" id="sec-boundary">
+    <div class="field">
+      <label>Boundary marker</label>
+      <input type="text" id="combatBoundaryMarker" value="CREATION DU COMBAT">
+      <div class="hint">Matches any line containing this text exactly as written (not a <code>Name: keyword</code> line — this one has no caster). Every occurrence splits the log into a separate fight, each with its own roster/meter/charts, browsable with the Prev/Next fight buttons above the results. If no Start keyword above is set, <b>Watch File (Live)</b> and <b>Reset Tracking</b> also jump straight to the last occurrence instead of replaying every past fight. Leave empty to disable (treats the whole log as one fight).</div>
+    </div>
+    </div>
+
+    <div class="section-label collapsible" data-target="sec-ownership">Ownership rules (optional) <span class="chev">▸</span></div>
+    <div class="section-body collapsed" id="sec-ownership">
+    <div class="field">
+      <label>Summons &amp; DOT/status attribution</label>
+      <textarea id="ownershipRules" style="min-height:200px; font-size:10.5px;">Graine, Relent boisé -&gt; tags: Tétatoxine, Maudit / summons: La Goulue, La Sacrifiée, La Folle, La Surpuissante, La Bloqueuse, La Gonflable
+Colli-mateur -&gt; tags: Collisions douloureuses
+courant -&gt; tags: Collision
+Contre-nature -&gt; tags: Propagateur délayé
+Dissolution -&gt; tags: Dissolution
+Microbot -&gt; tags: Roues chaudes
+tourelle -&gt; summons: Tourelle
+Sablier -&gt; tags: Sablier
+Horloge -&gt; tags: Horloge
+Canine -&gt; tags: Canine
+Chienchien -&gt; tags: Chienchien
+Proie -&gt; tags: Flair
+Baroud -&gt; tags: Baroud
+Brise'os -&gt; tags: Fracture
+Halo chatoyant -&gt; tags: Halo chatoyant
+Explo-soin -&gt; tags: Marque itsade
+Feu gardien -&gt; tags: Marque eting
+Lapino -&gt; summons: Super dark lapino, Super lapino
+Vent empoisonné -&gt; tags: Intoxiqué</textarea>
+      <div class="hint">
+        One rule per line: <code>spell(s) -&gt; tags: name(s) / summons: name(s)</code>. Comma-separated lists, everything case-insensitive, <code>tags:</code> and <code>summons:</code> both optional (need at least one).<br><br>
+        Whoever casts one of the spell(s) on the left becomes that rule's current "owner". From then on: any HP-change line tagged with one of the <code>tags</code> (the text in parentheses, e.g. <code>Ash: -500 PV (Intoxiqué)</code>) is credited to the owner instead of whoever's turn it is — this covers delayed DOT ticks. Any damage dealt by one of the <code>summons</code> acting on its <em>own</em> turn (its own "lance le sort" line) is also credited to the owner instead of the summon itself — this covers invocations that play independently.<br><br>
+        Add more lines for more owner spells. Leave the whole box empty to disable this feature entirely.
+      </div>
+    </div>
+    </div>
+
+    <div class="section-label collapsible open" data-target="sec-hide">Hide character(s) (optional) <span class="chev">▸</span></div>
+    <div class="section-body" id="sec-hide">
+    <div class="field">
+      <label>Hide damage dealt by</label>
+      <input type="text" id="hideDamageChars" placeholder="Type a name, press Enter…">
+      <div class="hint">Type a name and press Enter (or comma) to hide them, or click the <b>×</b> next to a name in the roster or breakdown table. Damage credited to hidden casters disappears from the meter, chart, table and roster — damage they <em>receive</em> from someone else is unaffected. Click the <b>×</b> on a chip below to bring someone back.</div>
+      <div class="hidden-chips" id="hiddenChipsList"></div>
+    </div>
+    <div class="field" style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+      <input type="checkbox" id="hideHealToo" style="width:14px; height:14px; accent-color:#e2493d;">
+      <label for="hideHealToo" style="margin:0; font-size:11.5px; color:var(--muted); font-family:'Inter',sans-serif;">Also hide their healing</label>
+    </div>
+    </div>
+
+    <div class="section-label collapsible open" data-target="sec-savelogs">Save logs <span class="chev">▸</span></div>
+    <div class="section-body" id="sec-savelogs">
+    <div class="btn-row" style="margin-top:0;">
+      <button id="saveLogsBtn">Save Copy of Parsed Logs</button>
+    </div>
+    <div class="status" id="saveLogsStatus" style="display:none;"></div>
+    </div>
+
+    <div class="section-label collapsible" data-target="sec-dedup">Deduplication (optional) <span class="chev">▸</span></div>
+    <div class="section-body collapsed" id="sec-dedup">
+    <div class="field" style="display:flex; align-items:center; gap:8px; margin-top:2px; flex-wrap:wrap;">
+      <input type="checkbox" id="dedupToggle" checked style="width:14px; height:14px; accent-color:#e2493d;">
+      <label for="dedupToggle" style="margin:0; font-size:11.5px; color:var(--muted); font-family:'Inter',sans-serif;">Skip lines that exactly repeat the line right before them, within</label>
+      <input type="number" id="dedupWindowMs" value="200" min="0" style="width:60px; padding:4px 6px; font-size:11px;">
+      <label for="dedupWindowMs" style="margin:0; font-size:11.5px; color:var(--muted); font-family:'Inter',sans-serif;">ms</label>
+    </div>
+    <div class="hint" style="margin-top:-2px;">The game sometimes logs the exact same event twice a few ms apart — that's a true duplicate. But identical text can also be two genuinely separate hits (e.g. a counter-attack that always deals the same fixed damage) seconds apart — those should both count. Only pairs within this window are treated as duplicates. Ignored if the line has no parseable timestamp (falls back to plain text match).</div>
+    </div>
+
+    <div id="rosterWrap" style="display:none;">
+      <div class="section-label">Roster</div>
+      <div class="roster" id="roster"></div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div class="empty">
+      <div class="big">No data yet</div>
+      <div class="small">Upload or paste a combat log on the left, check the regex patterns match your format, then hit "Parse Log". Try "Load Sample" to see it in action first.</div>
+    </div>
+  </main>
+</div>
+
+<script>
+const PALETTE = ["#e2493d","#d1a24a","#5c9ee0","#6fae7a","#b479d6","#e08a3d","#4ec7c7","#d65b8f","#8fb84c","#7787e0","#c9553d","#5cbf9e","#e0c23d","#9a6bd6"];
+
+let turnChart = null;
+let totalChart = null;
+let lastParsed = null; // {characters: Map, turnsSorted: []}
+let metric = 'dmg'; // 'dmg' | 'heal'
+
+const els = {
+  dropzone: document.getElementById('dropzone'),
+  fileInput: document.getElementById('fileInput'),
+  rawText: document.getElementById('rawText'),
+  casterPattern: document.getElementById('casterPattern'),
+  effectPattern: document.getElementById('effectPattern'),
+  turnPattern: document.getElementById('turnPattern'),
+  channelMarker: document.getElementById('channelMarker'),
+  startKeyword: document.getElementById('startKeyword'),
+  stopKeyword: document.getElementById('stopKeyword'),
+  combatBoundaryMarker: document.getElementById('combatBoundaryMarker'),
+  ownershipRules: document.getElementById('ownershipRules'),
+  hideDamageChars: document.getElementById('hideDamageChars'),
+  hideHealToo: document.getElementById('hideHealToo'),
+  hiddenChipsList: document.getElementById('hiddenChipsList'),
+  dedupToggle: document.getElementById('dedupToggle'),
+  dedupWindowMs: document.getElementById('dedupWindowMs'),
+  parseBtn: document.getElementById('parseBtn'),
+  sampleBtn: document.getElementById('sampleBtn'),
+  saveLogsBtn: document.getElementById('saveLogsBtn'),
+  saveLogsStatus: document.getElementById('saveLogsStatus'),
+  status: document.getElementById('status'),
+  main: document.getElementById('main'),
+  rosterWrap: document.getElementById('rosterWrap'),
+  roster: document.getElementById('roster'),
+  watchBtn: document.getElementById('watchBtn'),
+  stopWatchBtn: document.getElementById('stopWatchBtn'),
+  resetWatchBtn: document.getElementById('resetWatchBtn'),
+  liveStatus: document.getElementById('liveStatus'),
+  overlayEnabled: document.getElementById('overlayEnabled'),
+};
+
+els.dropzone.addEventListener('click', () => els.fileInput.click());
+['dragenter','dragover'].forEach(evt=>{ els.dropzone.addEventListener(evt, e=>{e.preventDefault(); els.dropzone.classList.add('drag');}); });
+['dragleave','drop'].forEach(evt=>{ els.dropzone.addEventListener(evt, e=>{e.preventDefault(); els.dropzone.classList.remove('drag');}); });
+els.dropzone.addEventListener('drop', e=>{ const f = e.dataTransfer.files[0]; if(f) loadFile(f); });
+els.fileInput.addEventListener('change', e=>{ const f = e.target.files[0]; if(f) loadFile(f); });
+
+function loadFile(f){
+  const reader = new FileReader();
+  reader.onload = () => {
+    els.rawText.value = reader.result;
+    els.status.innerHTML = `Loaded <span class="ok">${f.name}</span> — click "Parse Log".`;
+  };
+  reader.readAsText(f);
+}
+
+els.sampleBtn.addEventListener('click', ()=>{ els.rawText.value = SAMPLE_LOG; parseAndRender(); });
+els.parseBtn.addEventListener('click', parseAndRender);
+
+const SAMPLE_LOG = `04:32:54,273 - [Information (combat)] Naosuu lance le sort Cure alternative
+04:32:54,273 - [Information (combat)] Ayendas: +1 810 PV (Feu)
+04:32:54,274 - [Information (combat)] Naosuu lance le sort Colli-mateur
+04:32:54,274 - [Information (combat)] Nox: -72 082 PV  (Air)
+04:32:54,275 - [Information (combat)] 81 secondes reportées pour le tour suivant.
+04:32:54,280 - [Information (combat)] Dotann lance le sort Frappe solaire
+04:32:54,281 - [Information (combat)] Nox: -12 450 PV (Feu)
+04:32:54,282 - [Information (combat)] Shayou lance le sort Don Céleste
+04:32:54,282 - [Information (combat)] Ayendas: +540 PV (Lumiere)
+04:32:54,283 - [Information (combat)] Naosuu: +256 PV (Feu)
+04:32:54,283 - [Information (combat)] 18 secondes reportées pour le tour suivant.
+04:32:54,290 - [Information (combat)] Enufortune lance le sort Frappe sanguinaire
+04:32:54,291 - [Information (combat)] Nox: -9 340 PV (Terre)
+04:32:54,292 - [Information (combat)] Dotann lance le sort Frappe solaire
+04:32:54,293 - [Information (combat)] Nox: -15 220 PV (Feu)
+`;
+
+function buildRegex(pattern, flags){
+  try{ return new RegExp(pattern, flags); }catch(e){ return null; }
+}
+
+function getChar(characters, name){
+  const key = name.toLowerCase();
+  if(!characters.has(key)) characters.set(key, {display:name, color: PALETTE[characters.size % PALETTE.length], dmg:[], heal:[]});
+  return characters.get(key);
+}
+
+// A "fight" holds everything that's scoped to a single combat: its roster,
+// current turn, and the caster-attribution bookkeeping used to credit DOTs
+// and summons correctly. A new one is created every time the combat
+// boundary marker is seen, so each fight can be viewed independently with
+// the Prev/Next fight buttons.
+function createFight(){
+  return {
+    characters: new Map(), // key lower -> {display, color, dmg:[{turn,amount,target}], heal:[...]}
+    turn: 1,
+    turnBoundaries: 0,
+    lastCaster: null,
+    effectiveCaster: null, // set when the current actor is a tracked summon, to redirect its damage to its owner
+    ruleOwners: new Map(), // ownership-rule index -> current owner name (see parseOwnershipRules)
+    startTs: null, // timestamp (ms, day-offset corrected) of the first line seen for this fight
+    endTs: null, // timestamp of the last line seen for this fight so far
+  };
+}
+
+// A parse state is reusable/extendable: feeding it more lines later (live mode)
+// just continues where it left off (same fights list, same dedup buffers).
+function createParseState(startsActive){
+  return {
+    fights: [createFight()], // one entry per combat boundary crossed; [0] holds everything if no boundary marker is used
+    lineMeta: [],
+    dupSkipped: 0,
+    prevLineTrimmed: null, // fallback when a line has no parseable timestamp
+    recentLines: [], // [{key, ts}] recent lines within the dedup window, for burst-duplicate detection
+    dayOffsetMs: 0, // running offset added to timestamps once a fight crosses midnight
+    lastRawTs: null, // last raw "ms since midnight" value seen, to detect that crossing
+    prevLength: 0, // how many chars of the source file we've already consumed (live mode)
+    active: startsActive !== false, // false only when a start keyword is configured and not yet seen
+    sawStart: false, // whether the start keyword line has ever been matched
+  };
+}
+
+// Pulls the text out of every "(...)" group in a line, e.g.
+// "Khloe Aliapoh: -2 746 PV (Terre) (Parade !)" -> ["Terre", "Parade !"].
+// Some log lines append extra suffixes (crit/parry/etc.) after the actual
+// element/state tag, so we can't assume the tag we want is the last group —
+// every candidate has to be checked against the ownership rules.
+function extractParenTags(line){
+  const tags = [];
+  const re = /\(([^()]*)\)/g;
+  let m;
+  while((m = re.exec(line))){
+    const t = m[1].trim();
+    if(t) tags.push(t);
+  }
+  return tags;
+}
+
+// For dedup purposes, two lines "match" if everything after the timestamp is
+// identical — the game sometimes logs the exact same event twice a
+// millisecond apart, so comparing the raw line (timestamp included) never
+// actually matches.
+function dedupKey(line){
+  const m = /\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}/.exec(line);
+  if(!m) return line.trim();
+  return line.slice(m.index + m[0].length).trim();
+}
+
+// Returns the timestamp of a line in milliseconds-since-midnight, or null if
+// none could be found (e.g. pasted text with no timestamps at all).
+function parseLineTimestampRaw(line){
+  const m = /(\d{1,2}):(\d{2}):(\d{2})[.,](\d{1,3})/.exec(line);
+  if(!m) return null;
+  const h=+m[1], mi=+m[2], s=+m[3], ms=+m[4];
+  return ((h*3600 + mi*60 + s) * 1000) + ms;
+}
+
+// Wall-clock time resets to 0 at midnight, so a raw "ms since midnight" value
+// jumps backwards by ~86 400 000 whenever a fight runs past midnight. That
+// backward jump would otherwise wedge the dedup buffer open forever (nothing
+// after it could ever be pruned). This adds a running day offset, using
+// state to survive across incremental live-watch polls too.
+function parseLineTimestamp(line, state){
+  const raw = parseLineTimestampRaw(line);
+  if(raw === null) return null;
+  if(state.lastRawTs !== null && raw < state.lastRawTs - 3600000){
+    state.dayOffsetMs += 86400000;
+  }
+  state.lastRawTs = raw;
+  return raw + state.dayOffsetMs;
+}
+
+// Finds the character offset right after the line containing the LAST
+// occurrence of a combat boundary marker (e.g. "CREATION DU COMBAT") in the
+// given text. Used to skip straight to the most recent fight instead of
+// replaying the whole mirrored log from byte 0. Returns null if not found.
+function findLastBoundaryEnd(text, marker){
+  if(!marker) return null;
+  const idx = text.lastIndexOf(marker);
+  if(idx === -1) return null;
+  const nl = text.indexOf('\n', idx);
+  return nl === -1 ? text.length : nl + 1;
+}
+
+// Tags every lineMeta entry with which fight it belongs to (the current
+// last entry in state.fights at the time it's pushed) — lets "Save Copy of
+// Parsed Logs" filter down to just the fight currently being viewed.
+function pushMeta(state, obj){
+  obj.fightIndex = state.fights.length - 1;
+  state.lineMeta.push(obj);
+}
+
+function processLines(lines, state, casterRe, effectRe, turnRe, dedupOn, dedupWindowMs, startRe, stopRe, hiddenSet, hideHealToo, rules, channelMarker, combatBoundaryMarker){
+  rules = rules || [];
+  hiddenSet = hiddenSet || new Set();
+  for(const raw of lines){
+    const line = raw;
+    if(!line.trim()){ pushMeta(state, {text:line, type:'blank'}); state.prevLineTrimmed = null; state.recentLines.length = 0; continue; }
+
+    // Start/stop markers are checked before anything else, and regardless of
+    // the current active state, so a start keyword can re-open the window
+    // after a previous stop keyword closed it. This also runs before the
+    // channel filter below, since players usually type these in chat, not
+    // in the combat channel itself.
+    if(startRe && startRe.test(line)){
+      state.active = true;
+      state.sawStart = true;
+      pushMeta(state, {text:line, type:'start'});
+      continue;
+    }
+    if(stopRe && state.active && stopRe.test(line)){
+      state.active = false;
+      pushMeta(state, {text:line, type:'stop'});
+      continue;
+    }
+    if(!state.active){
+      pushMeta(state, {text:line, type:'skip'});
+      continue;
+    }
+
+    // A combat boundary marker (e.g. "CREATION DU COMBAT") isn't a
+    // Name: keyword line and isn't in the combat channel, so it's checked
+    // here, before the channel filter, same as start/stop. Every occurrence
+    // starts a brand new fight (own roster/turn/attribution), independently
+    // browsable later with the Prev/Next fight buttons — it doesn't just
+    // pause/resume like start/stop does.
+    if(combatBoundaryMarker && line.includes(combatBoundaryMarker)){
+      const newFight = createFight();
+      const boundaryTs = parseLineTimestamp(line, state);
+      if(boundaryTs !== null) newFight.startTs = boundaryTs;
+      state.fights.push(newFight);
+      pushMeta(state, {text:line, type:'boundary'});
+      continue;
+    }
+
+    // Anything outside the combat channel is ignored for parsing purposes
+    // (chat, engine/Lua noise, position sync, etc.) — start/stop keywords
+    // were already checked above regardless of channel.
+    if(channelMarker && !line.includes(channelMarker)){
+      pushMeta(state, {text:line, type:'channel'});
+      continue;
+    }
+
+    const fight = state.fights[state.fights.length - 1];
+    const characters = fight.characters;
+
+    const dkey = dedupKey(line);
+    const lineTs = parseLineTimestamp(line, state);
+    if(lineTs !== null){
+      if(fight.startTs === null) fight.startTs = lineTs;
+      fight.endTs = lineTs;
+    }
+    let isDup = false;
+    if(dedupOn){
+      if(lineTs === null){
+        // No timestamp to work with (e.g. pasted text) — fall back to a
+        // simple "same as the line right before it" check.
+        if(state.prevLineTrimmed !== null && dkey === state.prevLineTrimmed) isDup = true;
+      }else{
+        // The game sometimes replays a whole burst of lines a few dozen ms
+        // later, with other distinct lines interleaved — so a duplicate
+        // isn't always the immediately preceding line. Compare against every
+        // recent line still within the time window instead of just the last one.
+        while(state.recentLines.length && lineTs - state.recentLines[0].ts > dedupWindowMs){
+          state.recentLines.shift();
+        }
+        isDup = state.recentLines.some(e => e.key === dkey);
+      }
+    }
+    if(isDup){
+      state.dupSkipped++;
+      pushMeta(state, {text:line, type:'dup'});
+      continue;
+    }
+    state.prevLineTrimmed = dkey;
+    if(lineTs !== null) state.recentLines.push({key:dkey, ts:lineTs});
+
+    const tm = turnRe.exec(line);
+    if(tm){
+      fight.turnBoundaries++;
+      if(tm.groups && tm.groups.num) fight.turn = parseInt(tm.groups.num,10);
+      else fight.turn++;
+      pushMeta(state, {text:line, type:'turn'});
+      continue;
+    }
+
+    const cm = casterRe.exec(line);
+    if(cm && cm.groups && cm.groups.caster){
+      fight.lastCaster = cm.groups.caster.trim();
+      const casterLower = fight.lastCaster.toLowerCase();
+
+      // Is this caster actually a tracked summon acting on its own turn?
+      // If so, redirect its damage/heal to its owner instead of itself.
+      let redirect = null;
+      rules.forEach((rule, idx)=>{
+        if(rule.summons.size && [...rule.summons].some(s => casterLower.includes(s) || s.includes(casterLower))){
+          const owner = fight.ruleOwners.get(idx);
+          if(owner) redirect = owner;
+        }
+      });
+      fight.effectiveCaster = redirect;
+
+      // Does this cast make the caster the current "owner" of a rule (e.g. casting "Graine")?
+      if(cm.groups.spell){
+        const spellLower = cm.groups.spell.trim().toLowerCase();
+        rules.forEach((rule, idx)=>{
+          if(rule.spells.size && [...rule.spells].some(sp => spellLower.includes(sp))){
+            fight.ruleOwners.set(idx, fight.lastCaster);
+          }
+        });
+      }
+
+      if(hiddenSet.has(casterLower)){
+        // Still track lastCaster (so subsequent effect lines are correctly
+        // attributed to them and hidden too) but don't register them as a
+        // visible character just because they cast something.
+        pushMeta(state, {text:line, type:'hidden'});
+      }else if(redirect){
+        // A tracked summon acting on its own turn: don't create a separate
+        // roster entry for it, just show its cast line colored as its owner.
+        pushMeta(state, {text:line, type:'cast', color: getChar(characters, redirect).color});
+      }else{
+        getChar(characters, fight.lastCaster);
+        pushMeta(state, {text:line, type:'cast', color: getChar(characters, fight.lastCaster).color});
+      }
+      continue;
+    }
+
+    const em = effectRe.exec(line);
+    if(em && em.groups && em.groups.target && em.groups.sign && em.groups.amount){
+      const target = em.groups.target.trim();
+      const amount = parseInt(em.groups.amount.replace(/\s+/g,''), 10);
+      if(!isNaN(amount)){
+        let source = fight.effectiveCaster || fight.lastCaster || target;
+
+        // A DOT/status tag in parentheses can override the source too,
+        // e.g. crediting a delayed "Intoxiqué" tick to whoever cast
+        // "Vent empoisonné", even if someone else has acted since. Every
+        // parenthetical group on the line is checked, not just the last one,
+        // since the game sometimes appends extra suffixes like "(Parade !)".
+        const tags = extractParenTags(line);
+        if(tags.length){
+          outer:
+          for(let idx=0; idx<rules.length; idx++){
+            const rule = rules[idx];
+            if(!rule.tags.size) continue;
+            for(const tag of tags){
+              const tagLower = tag.toLowerCase();
+              if(rule.tags.has(tagLower)){
+                const owner = fight.ruleOwners.get(idx);
+                if(owner){ source = owner; break outer; }
+              }
+            }
+          }
+        }
+
+        const isDmg = em.groups.sign === '-' || em.groups.sign === '+-';
+        const sourceHidden = hiddenSet.has(source.toLowerCase()) && (isDmg || hideHealToo);
+        if(sourceHidden){
+          pushMeta(state, {text:line, type:'hidden', sign:em.groups.sign});
+          continue;
+        }
+        const c = getChar(characters, source);
+        if(isDmg) c.dmg.push({turn: fight.turn, amount, target});
+        else c.heal.push({turn: fight.turn, amount, target});
+        pushMeta(state, {text:line, type:'effect', color:c.color, sign:em.groups.sign});
+        continue;
+      }
+    }
+
+    pushMeta(state, {text:line, type:'other'});
+  }
+}
+
+// Turns a plain keyword like "start" into a regex matching lines that end
+// with ": <keyword>" — e.g. "Ash: start" — regardless of who wrote it.
+function buildKeywordRegex(keyword){
+  const kw = (keyword || '').trim();
+  if(!kw) return null;
+  const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(':\\s*' + escaped + '\\s*$', 'i');
+}
+
+// Parses the "Ownership rules" textarea. One rule per line:
+//   spell(s) -> tags: name(s) / summons: name(s)
+// Returns an array of {spells:Set, tags:Set, summons:Set}, all lowercased.
+function parseOwnershipRules(text){
+  const rules = [];
+  const lines = (text || '').split(/\r?\n/);
+  for(const raw of lines){
+    const line = raw.trim();
+    if(!line || line.startsWith('#')) continue;
+    const arrowIdx = line.indexOf('->');
+    if(arrowIdx === -1) continue;
+    const spells = new Set(line.slice(0, arrowIdx).split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
+    if(spells.size === 0) continue;
+    const tags = new Set();
+    const summons = new Set();
+    line.slice(arrowIdx + 2).split('/').forEach(segment=>{
+      const seg = segment.trim();
+      const colonIdx = seg.indexOf(':');
+      if(colonIdx === -1) return;
+      const label = seg.slice(0, colonIdx).trim().toLowerCase();
+      const values = seg.slice(colonIdx + 1).split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+      if(label === 'tags') values.forEach(v=>tags.add(v));
+      else if(label === 'summons' || label === 'invocations') values.forEach(v=>summons.add(v));
+    });
+    if(tags.size || summons.size) rules.push({spells, tags, summons});
+  }
+  return rules;
+}
+
+function readPatterns(){
+  const casterPatStr = els.casterPattern.value;
+  const effectPatStr = els.effectPattern.value;
+  const turnPatStr = els.turnPattern.value;
+
+  if(!/\(\?<caster>/.test(casterPatStr)){ return {error:'Caster pattern needs a (?&lt;caster&gt;) group.'}; }
+  if(!/\(\?<target>/.test(effectPatStr) || !/\(\?<sign>/.test(effectPatStr) || !/\(\?<amount>/.test(effectPatStr)){ return {error:'HP change pattern needs (?&lt;target&gt;), (?&lt;sign&gt;) and (?&lt;amount&gt;) groups.'}; }
+
+  const casterRe = buildRegex(casterPatStr, '');
+  const effectRe = buildRegex(effectPatStr, '');
+  const turnRe = buildRegex(turnPatStr, '');
+  if(!casterRe || !effectRe || !turnRe){ return {error:'One of the regex patterns is invalid.'}; }
+
+  const startRe = buildKeywordRegex(els.startKeyword.value);
+  const stopRe = buildKeywordRegex(els.stopKeyword.value);
+  const hiddenSet = new Set(hiddenNames.map(n=>n.toLowerCase()));
+  const hideHealToo = els.hideHealToo.checked;
+  const ownershipRules = parseOwnershipRules(els.ownershipRules.value);
+  const channelMarker = els.channelMarker.value.trim();
+  const dedupWindowMs = Math.max(0, parseInt(els.dedupWindowMs.value, 10) || 0);
+  const combatBoundaryMarker = els.combatBoundaryMarker.value.trim();
+  return {casterRe, effectRe, turnRe, startRe, stopRe, hiddenSet, hideHealToo, ownershipRules, channelMarker, dedupWindowMs, combatBoundaryMarker};
+}
+
+function finalizeAndRender(state, statusHtml){
+  activeState = state;
+  renderHiddenChips();
+  const fights = state.fights && state.fights.length ? state.fights : [createFight()];
+  let idx = (viewFightIndex === null || viewFightIndex >= fights.length) ? fights.length - 1 : viewFightIndex;
+  if(idx < 0) idx = 0;
+  const fight = fights[idx];
+  const characters = fight.characters;
+
+  if(characters.size === 0){
+    els.status.innerHTML = statusHtml || '<span class="warn">Nothing matched. Adjust the regex patterns and try again.</span>';
+    renderLogPreview(state.lineMeta);
+    pushOverlaySnapshot(null);
+    return;
+  }
+
+  const turnsSet = new Set();
+  characters.forEach(c=>{ c.dmg.forEach(e=>turnsSet.add(e.turn)); c.heal.forEach(e=>turnsSet.add(e.turn)); });
+  const turnsSorted = Array.from(turnsSet).sort((a,b)=>a-b);
+
+  lastParsed = {characters, turnsSorted, fightIndex: idx, fightCount: fights.length, startTs: fight.startTs, endTs: fight.endTs};
+
+  if(statusHtml){
+    els.status.innerHTML = statusHtml;
+  }else{
+    const dupNote = els.dedupToggle.checked ? ` — ${state.dupSkipped} duplicate line(s) skipped.` : '';
+    const fightNote = fights.length > 1 ? ` — viewing fight ${idx+1} of ${fights.length}.` : '';
+    els.status.innerHTML = `<span class="ok">Parsed ${characters.size} entity(ies) across ${turnsSorted.length} turn(s)</span> — ${fight.turnBoundaries} turn boundary line(s) found.${dupNote}${fightNote}`;
+  }
+
+  renderRoster(characters);
+  try{
+    renderMain();
+  }catch(err){
+    console.error('renderMain failed:', err);
+    els.status.innerHTML += ` <span class="warn">(A chart/table failed to render: ${err.message})</span>`;
+  }
+  renderLogPreview(state.lineMeta);
+  pushOverlaySnapshot({characters, turnsSorted, turn: fight.turn, fightIndex: idx, fightCount: fights.length});
+}
+
+// Sends a compact snapshot to the overlay window (main process just forwards
+// it) every time the results panel re-renders — offline parse, live poll, or
+// switching fights all funnel through finalizeAndRender, so this is the one
+// place that needs to know about the overlay at all.
+function pushOverlaySnapshot(data){
+  if(!window.api || !els.overlayEnabled.checked) return;
+  if(!data){ window.api.sendOverlaySnapshot(null); return; }
+  const sorted = Array.from(data.characters.values())
+    .map(c=>({name:c.display, color:c.color, dmg:total(c.dmg), heal:total(c.heal)}))
+    .sort((a,b)=> b.dmg - a.dmg)
+    .slice(0, 8);
+  const partyDmg = sorted.reduce((s,c)=>s+c.dmg,0);
+  window.api.sendOverlaySnapshot({
+    turn: data.turn,
+    fightLabel: data.fightCount > 1 ? `Fight ${data.fightIndex+1}/${data.fightCount}` : '',
+    partyDmg,
+    entries: sorted,
+  });
+}
+
+// Moves the fight being viewed by `delta` (±1), skipping over empty fights
+// (common right after a boundary marker with nothing recorded yet).
+// Landing on the very latest fight snaps back to "auto-follow" mode (null),
+// so live updates keep tracking it without needing another click.
+let activeState = null;
+// User-reorderable panel order, kept across re-renders — drag by the ⠿⠿ handle.
+let panelOrder = ['char-breakdown', 'party-comp', 'total-chart', 'turn-chart', 'log-preview'];
+let viewFightIndex = null; // null = always show the latest fight
+function stepFight(delta){
+  if(!activeState) return;
+  const fights = activeState.fights || [];
+  if(!fights.length) return;
+  const idx = (viewFightIndex === null) ? fights.length - 1 : viewFightIndex;
+  let next = idx + delta;
+  while(next >= 0 && next < fights.length && fights[next].characters.size === 0){
+    next += delta;
+  }
+  next = Math.max(0, Math.min(fights.length - 1, next));
+  viewFightIndex = (next === fights.length - 1) ? null : next;
+  finalizeAndRender(activeState);
+}
+function jumpToLatestFight(){
+  viewFightIndex = null;
+  if(activeState) finalizeAndRender(activeState);
+}
+
+function pad2(n){ return String(n).padStart(2,'0'); }
+
+function formatClockTime(ts){
+  if(ts === null || ts === undefined) return '--:--:--';
+  const msOfDay = ((ts % 86400000) + 86400000) % 86400000;
+  const totalSec = Math.floor(msOfDay / 1000);
+  return `${pad2(Math.floor(totalSec/3600))}:${pad2(Math.floor(totalSec/60)%60)}:${pad2(totalSec%60)}`;
+}
+
+function formatDuration(startTs, endTs){
+  if(startTs === null || endTs === null || startTs === undefined || endTs === undefined) return '';
+  const sec = Math.max(0, Math.round((endTs - startTs) / 1000));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+// Saves everything the app actually read for the fight currently being
+// viewed (Prev/Next), not the whole session — so switching fights and
+// saving grabs just that pull's log, not everything since the app started.
+els.saveLogsBtn && els.saveLogsBtn.addEventListener('click', saveParsedLogsCopy);
+
+async function saveParsedLogsCopy(){
+  if(!activeState || !activeState.lineMeta.length || !lastParsed){
+    els.saveLogsStatus.style.display = '';
+    els.saveLogsStatus.innerHTML = '<span class="warn">Nothing parsed yet — nothing to save.</span>';
+    return;
+  }
+
+  const fightIdx = lastParsed.fightIndex;
+  const lines = activeState.lineMeta.filter(lm => lm.fightIndex === fightIdx).map(lm => lm.text);
+  if(!lines.length){
+    els.saveLogsStatus.style.display = '';
+    els.saveLogsStatus.innerHTML = '<span class="warn">Nothing recorded for this fight yet.</span>';
+    return;
+  }
+  const text = lines.join('\n');
+  const now = new Date();
+  const stamp = `${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}_${pad2(now.getHours())}-${pad2(now.getMinutes())}-${pad2(now.getSeconds())}`;
+  const fightLabel = (lastParsed.fightCount > 1) ? `-fight${fightIdx+1}` : '';
+  const suggestedName = `wakfu-log-parsed${fightLabel}_${stamp}.txt`;
+
+  // Native save dialog handled in the main process (opens in the watched
+  // file's folder when there is one), instead of the browser's File System
+  // Access API — no permission dance, works the same on every platform.
+  const res = await window.api.saveLog(text, suggestedName, watchPath);
+  els.saveLogsStatus.style.display = '';
+  if(res.cancelled) return;
+  els.saveLogsStatus.innerHTML = res.ok
+    ? `<span class="ok">Saved ${res.name}.</span>`
+    : `<span class="warn">Couldn't save: ${res.error}</span>`;
+}
+
+function parseAndRender(){
+  const text = els.rawText.value;
+  if(!text.trim()){ els.status.innerHTML = '<span class="warn">Nothing to parse — paste or upload a log first.</span>'; return; }
+
+  const pat = readPatterns();
+  if(pat.error){ els.status.innerHTML = `<span class="warn">${pat.error}</span>`; return; }
+
+  if(watchPath) stopWatching(); // a manual (re-)parse replaces whatever was being watched
+  viewFightIndex = null; // a fresh parse always starts by viewing the latest fight
+
+  const state = createParseState(!pat.startRe);
+  const lines = text.split(/\r?\n/);
+  processLines(lines, state, pat.casterRe, pat.effectRe, pat.turnRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker);
+
+  if(pat.startRe && !state.sawStart){
+    els.status.innerHTML = '<span class="warn">Start keyword never appears in this log — nothing parsed. Check the keyword.</span>';
+    renderLogPreview(state.lineMeta);
+    return;
+  }
+  finalizeAndRender(state);
+}
+
+// ---- Live mode: the main process reads the file (Node fs, no browser
+// permission model to fight with), the renderer just polls it every 1.5s and
+// keeps exactly the same incremental parsing logic as offline mode. Transient
+// read errors (antivirus scan, momentary lock while the mirror script
+// writes, etc.) are tolerated and just retried on the next tick. Only a real,
+// persistent loss of access (file moved/deleted) pauses watching — and even
+// then the parsed state and the path are kept, so a single click on "Resume
+// Watching" continues right where it left off.
+let watchPath = null;
+let watchTimer = null;
+let watchState = null;
+let consecutiveFailures = 0;
+const MAX_TRANSIENT_FAILURES = 5; // ~7.5s of failures before we treat it as non-transient
+
+// Collapsible sidebar sections — each .section-label.collapsible toggles the
+// .section-body right after it (matched by data-target/id, not DOM position,
+// since renderMain() re-renders other parts of the page independently).
+// Chart.js draws text directly onto a <canvas>, using whatever font is
+// actually available at draw time — if Space Mono hasn't finished loading
+// yet, it silently falls back to a system monospace font (which may well
+// have a dotted/slashed zero) and never redraws once the real font arrives.
+// Force one redraw once the browser confirms every requested font is ready.
+if(document.fonts && document.fonts.ready){
+  document.fonts.ready.then(()=>{ if(activeState) finalizeAndRender(activeState); });
+}
+
+document.querySelectorAll('.section-label.collapsible').forEach(label=>{
+  const body = document.getElementById(label.dataset.target);
+  if(!body) return;
+  label.classList.toggle('open', !body.classList.contains('collapsed'));
+  label.addEventListener('click', ()=>{
+    const collapsed = body.classList.toggle('collapsed');
+    label.classList.toggle('open', !collapsed);
+  });
+});
+
+els.watchBtn && els.watchBtn.addEventListener('click', startWatching);
+els.stopWatchBtn && els.stopWatchBtn.addEventListener('click', stopWatching);
+els.resetWatchBtn && els.resetWatchBtn.addEventListener('click', resetWatchTracking);
+
+// ---- Hide character(s): clickable × buttons in the roster/table, kept in
+// sync with the "Hide damage dealt by" text field (and vice versa). Since
+// hiding changes what processLines even records in the first place, any
+// change here re-runs the whole parse from scratch rather than just re-
+// rendering — otherwise un-hiding someone couldn't recover their past damage.
+let hiddenNames = []; // source of truth for who's hidden — the text input is just for typing new ones in
+
+function addHiddenName(name){
+  name = (name || '').trim();
+  if(!name) return;
+  const lower = name.toLowerCase();
+  if(!hiddenNames.some(n=>n.toLowerCase()===lower)) hiddenNames.push(name);
+  els.hideDamageChars.value = '';
+  onHiddenListChanged();
+}
+function removeHiddenName(name){
+  hiddenNames = hiddenNames.filter(n=>n.toLowerCase() !== name.toLowerCase());
+  onHiddenListChanged();
+}
+function renderHiddenChips(){
+  els.hiddenChipsList.innerHTML = hiddenNames.map(n=>
+    `<span class="hidden-chip">${n}<button type="button" data-name="${n}" title="Show this character again">×</button></span>`
+  ).join('');
+}
+function onHiddenListChanged(){
+  renderHiddenChips();
+  // Re-run the whole parse so a newly-hidden character disappears and a
+  // newly-un-hidden one gets their past damage back, not just future lines.
+  if(watchPath) resetWatchTracking();
+  else if(activeState) parseAndRender();
+}
+
+renderHiddenChips();
+// Toggling this changes what gets hidden for everyone already on the list,
+// so it needs to trigger a re-parse too, same as adding/removing a name.
+els.hideHealToo.addEventListener('change', onHiddenListChanged);
+// Toggling the overlay push on/off doesn't need a re-parse, just an
+// immediate refresh (clears the overlay, or shows the current fight again).
+els.overlayEnabled.addEventListener('change', ()=>{
+  if(els.overlayEnabled.checked && activeState) finalizeAndRender(activeState);
+  else if(window.api) window.api.sendOverlaySnapshot(null);
+});
+// Enter or comma commits the typed name as a chip; blurring with leftover
+// text commits it too, so nothing typed is silently lost.
+els.hideDamageChars.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter' || e.key === ','){
+    e.preventDefault();
+    addHiddenName(els.hideDamageChars.value.replace(/,$/,''));
+  }
+});
+els.hideDamageChars.addEventListener('blur', ()=>{
+  if(els.hideDamageChars.value.trim()) addHiddenName(els.hideDamageChars.value);
+});
+els.hiddenChipsList.addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-name]');
+  if(btn) removeHiddenName(btn.dataset.name);
+});
+// Delegated on the persistent containers (not the rows, which get replaced
+// on every render) so this keeps working after roster/table re-renders.
+els.roster.addEventListener('click', (e)=>{
+  const btn = e.target.closest('.hide-x');
+  if(btn) addHiddenName(btn.dataset.name);
+});
+els.main.addEventListener('click', (e)=>{
+  const btn = e.target.closest('.hide-x');
+  if(btn) addHiddenName(btn.dataset.name);
+});
+
+function baseName(p){ return p ? p.replace(/^.*[\\/]/, '') : ''; }
+
+async function startWatching(){
+  const pat = readPatterns();
+  if(pat.error){ els.liveStatus.innerHTML = `<span class="warn">${pat.error}</span>`; return; }
+
+  const picked = await window.api.selectLogFile(); // native OS dialog, remembers its own last folder
+  if(!picked) return; // user cancelled
+
+  watchPath = picked;
+  watchState = createParseState(!pat.startRe);
+  viewFightIndex = null; // a fresh watch session always starts by viewing the latest fight
+  consecutiveFailures = 0;
+  els.watchBtn.style.display = 'none';
+  els.stopWatchBtn.style.display = '';
+  els.resetWatchBtn.style.display = '';
+
+  const skippedToFight = await jumpToLastBoundary(pat);
+  els.liveStatus.innerHTML = skippedToFight
+    ? `<span class="ok">Watching ${baseName(watchPath)} — skipped to the most recent fight…</span>`
+    : `<span class="ok">Watching ${baseName(watchPath)}…</span>`;
+
+  await pollWatch();
+  if(watchPath) watchTimer = setInterval(pollWatch, 1500); // pollWatch may have paused us already
+}
+
+function stopWatching(){
+  if(watchTimer) clearInterval(watchTimer);
+  watchTimer = null;
+  watchPath = null;
+  watchState = null;
+  consecutiveFailures = 0;
+  els.watchBtn.style.display = '';
+  els.stopWatchBtn.style.display = 'none';
+  els.resetWatchBtn.style.display = 'none';
+  els.liveStatus.innerHTML = 'Stopped watching.';
+}
+
+// Restarts tracking from scratch on the SAME already-picked file — no need to
+// go back through the file picker. Re-reads the whole file from byte 0, so
+// this also doubles as a manual recovery if the file was truncated/rotated
+// and the app is stuck waiting for a start keyword that already went by.
+async function resetWatchTracking(){
+  if(!watchPath) return;
+  if(watchTimer){ clearInterval(watchTimer); watchTimer = null; }
+  const pat = readPatterns();
+  if(pat.error){ els.liveStatus.innerHTML = `<span class="warn">${pat.error}</span>`; return; }
+  watchState = createParseState(!pat.startRe);
+  viewFightIndex = null; // resetting tracking always starts by viewing the latest fight
+  consecutiveFailures = 0;
+
+  const skippedToFight = await jumpToLastBoundary(pat);
+  els.liveStatus.innerHTML = skippedToFight
+    ? `<span class="ok">Tracking reset — skipped to the most recent fight in ${baseName(watchPath)}…</span>`
+    : `<span class="ok">Tracking reset — rereading ${baseName(watchPath)} from the start…</span>`;
+
+  await pollWatch();
+  if(watchPath) watchTimer = setInterval(pollWatch, 1500);
+}
+
+// When no explicit Start keyword is configured but a combat boundary marker
+// is, jump watchState.prevLength straight past the last occurrence of that
+// marker in the file — so we start tracking the current fight instead of
+// replaying every past one in the mirrored log. Returns true if it skipped
+// ahead, false if it left prevLength at 0 (no marker configured/found).
+async function jumpToLastBoundary(pat){
+  if(pat.startRe || !pat.combatBoundaryMarker) return false;
+  const res = await window.api.readFile(watchPath);
+  if(!res.ok) return false; // ignore — fall back to reading from the start
+  const off = findLastBoundaryEnd(res.text, pat.combatBoundaryMarker);
+  if(off !== null){ watchState.prevLength = off; return true; }
+  return false;
+}
+
+// Pauses polling (interval only) but keeps watchPath + watchState intact,
+// and shows a button to resume — no permission dance needed with plain fs
+// access, this just retries the read.
+function pauseWatching(message){
+  if(watchTimer) clearInterval(watchTimer);
+  watchTimer = null;
+  els.liveStatus.innerHTML = `<span class="warn">${message}</span> `;
+  const btn = document.createElement('button');
+  btn.textContent = 'Resume Watching';
+  btn.style.cssText = 'flex:none; width:auto; padding:6px 12px; font-size:10.5px; margin-top:6px;';
+  btn.addEventListener('click', resumeWatching);
+  els.liveStatus.appendChild(btn);
+}
+
+async function resumeWatching(){
+  if(!watchPath) return;
+  consecutiveFailures = 0;
+  els.liveStatus.innerHTML = `<span class="ok">Watching ${baseName(watchPath)}…</span>`;
+  await pollWatch();
+  if(watchPath) watchTimer = setInterval(pollWatch, 1500);
+}
+
+async function pollWatch(){
+  if(!watchPath) return;
+
+  const read = await window.api.readFile(watchPath);
+  if(!read.ok){
+    consecutiveFailures++;
+    if(read.notFound){
+      // File moved/deleted — needs the user to point us at it again.
+      pauseWatching(`${baseName(watchPath)} not found (moved or deleted?). Click "Watch File (Live)" to pick it again.`);
+      watchPath = null; watchState = null;
+      els.watchBtn.style.display = '';
+      els.stopWatchBtn.style.display = 'none';
+      return;
+    }
+    if(consecutiveFailures >= MAX_TRANSIENT_FAILURES){
+      pauseWatching(`Couldn't read ${baseName(watchPath)} after several attempts (locked?).`);
+      return;
+    }
+    // Likely transient (e.g. file briefly locked mid-write) — just retry next tick.
+    return;
+  }
+  consecutiveFailures = 0;
+  const text = read.text;
+
+  const pat = readPatterns();
+  if(pat.error){ els.liveStatus.innerHTML = `<span class="warn">${pat.error}</span>`; return; }
+
+  // If the file got shorter than what we'd already read, it was truncated/rewritten
+  // (log rotation, new fight session, etc). Start over — but say so clearly,
+  // since silently going back to "waiting for start keyword" with no
+  // explanation looks like the app just stopped working.
+  let wasReset = false;
+  if(text.length < watchState.prevLength){
+    watchState = createParseState(!pat.startRe);
+    wasReset = true;
+  }
+
+  // Only consume up through the last newline, so we never parse a line the game
+  // is still in the middle of writing — it'll be picked up whole on the next poll.
+  const lastNL = text.lastIndexOf('\n');
+  const readyUpTo = lastNL === -1 ? 0 : lastNL + 1;
+  if(readyUpTo <= watchState.prevLength){
+    if(wasReset){
+      els.liveStatus.innerHTML = `<span class="warn">⚠ ${baseName(watchPath)} was truncated or restarted — tracking has been reset.${pat.startRe ? ' Resend your start keyword to resume.' : ''}</span>`;
+    }
+    return; // nothing new (and complete) yet
+  }
+
+  const newText = text.slice(watchState.prevLength, readyUpTo);
+  watchState.prevLength = readyUpTo;
+  if(!newText){
+    if(wasReset){
+      els.liveStatus.innerHTML = `<span class="warn">⚠ ${baseName(watchPath)} was truncated or restarted — tracking has been reset.${pat.startRe ? ' Resend your start keyword to resume.' : ''}</span>`;
+    }
+    return;
+  }
+
+  const newLines = newText.split(/\r?\n/).filter((l,i,arr)=> !(i===arr.length-1 && l===''));
+  processLines(newLines, watchState, pat.casterRe, pat.effectRe, pat.turnRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker);
+
+  let statusMsg;
+  const curFight = watchState.fights[watchState.fights.length - 1];
+  if(wasReset && pat.startRe && !watchState.sawStart){
+    statusMsg = `<span class="warn">⚠ ${baseName(watchPath)} was truncated or restarted — tracking has been reset. Waiting for start keyword…</span>`;
+  }else if(pat.startRe && !watchState.sawStart){
+    statusMsg = `<span class="warn">● Live — ${baseName(watchPath)}, waiting for start keyword…</span>`;
+  }else if(pat.stopRe && !watchState.active){
+    statusMsg = `<span class="ok">● Live — ${baseName(watchPath)} (paused after stop keyword)</span> — ${curFight.characters.size} entity(ies), turn ${curFight.turn}.`;
+  }else{
+    statusMsg = `<span class="ok">● Live — ${baseName(watchPath)}</span> — ${curFight.characters.size} entity(ies), turn ${curFight.turn}.`;
+  }
+  finalizeAndRender(watchState, statusMsg);
+}
+
+function total(entries){ return entries.reduce((s,e)=>s+e.amount,0); }
+
+function renderRoster(characters){
+  els.rosterWrap.style.display = 'block';
+  els.roster.innerHTML = '';
+  const sorted = Array.from(characters.entries()).sort((a,b)=> total(b[1].dmg) - total(a[1].dmg));
+  for(const [key, c] of sorted){
+    const row = document.createElement('div');
+    row.className = 'roster-row';
+    row.innerHTML = `<div class="swatch" style="background:${c.color}"></div><div class="name">${c.display}</div><div class="tot">${total(c.dmg).toLocaleString()} dmg<br>${total(c.heal).toLocaleString()} heal</div><button type="button" class="hide-x" data-name="${c.display}" title="Hide ${c.display}'s damage">×</button>`;
+    els.roster.appendChild(row);
+  }
+}
+
+// Drag-and-drop reordering for the result panels. The panel itself is only
+// made draggable while the mouse is down on its ⠿⠿ handle (not the whole
+// panel), so clicking buttons/toggles inside a panel never accidentally
+// starts a drag. Order is kept in panelOrder and reapplied on every render.
+function initPanelDragAndDrop(){
+  const container = els.main;
+  let draggedId = null;
+
+  container.querySelectorAll('.panel[data-panel-id]').forEach(panel=>{
+    const handle = panel.querySelector('.drag-handle');
+    if(!handle) return;
+
+    handle.addEventListener('mousedown', ()=>{ panel.draggable = true; });
+    panel.addEventListener('dragend', ()=>{
+      panel.draggable = false;
+      panel.classList.remove('dragging');
+      container.querySelectorAll('.panel').forEach(p=>p.classList.remove('drag-over-top','drag-over-bottom'));
+    });
+
+    panel.addEventListener('dragstart', (e)=>{
+      draggedId = panel.dataset.panelId;
+      e.dataTransfer.effectAllowed = 'move';
+      panel.classList.add('dragging');
+    });
+
+    panel.addEventListener('dragover', (e)=>{
+      if(!draggedId || panel.dataset.panelId === draggedId) return;
+      e.preventDefault();
+      const rect = panel.getBoundingClientRect();
+      const before = (e.clientY - rect.top) < rect.height / 2;
+      panel.classList.toggle('drag-over-top', before);
+      panel.classList.toggle('drag-over-bottom', !before);
+    });
+
+    panel.addEventListener('dragleave', ()=>{
+      panel.classList.remove('drag-over-top','drag-over-bottom');
+    });
+
+    panel.addEventListener('drop', (e)=>{
+      e.preventDefault();
+      const targetId = panel.dataset.panelId;
+      panel.classList.remove('drag-over-top','drag-over-bottom');
+      if(!draggedId || targetId === draggedId) return;
+      const before = panel.classList.contains('drag-over-top');
+      panelOrder = panelOrder.filter(id => id !== draggedId);
+      let targetIdx = panelOrder.indexOf(targetId);
+      panelOrder.splice(before ? targetIdx : targetIdx + 1, 0, draggedId);
+      draggedId = null;
+      renderMain();
+    });
+  });
+}
+
+function renderMain(){
+  const {characters, turnsSorted, fightIndex, fightCount, startTs, endTs} = lastParsed;
+  const sortedByDmg = Array.from(characters.entries()).sort((a,b)=> total(b[1].dmg) - total(a[1].dmg));
+  const partyDmg = sortedByDmg.reduce((s,[,c])=>s+total(c.dmg),0);
+  const partyHeal = sortedByDmg.reduce((s,[,c])=>s+total(c.heal),0);
+  const topDmg = sortedByDmg[0];
+  const topHeal = Array.from(characters.entries()).sort((a,b)=> total(b[1].heal) - total(a[1].heal))[0];
+
+  const timeRange = startTs !== null ? `<span style="font-family:'Space Mono',monospace; font-size:11px; color:var(--muted);">${formatClockTime(startTs)} – ${formatClockTime(endTs)}${formatDuration(startTs,endTs) ? ' ('+formatDuration(startTs,endTs)+')' : ''}</span>` : '';
+
+  const navPanel = fightCount > 1 ? `
+    <div class="panel" style="display:flex; align-items:center; justify-content:center; gap:10px; padding:12px 16px;">
+      <button id="prevFightBtn" class="fight-nav-btn" ${fightIndex<=0?'disabled':''}>◀ Prev fight</button>
+      <span style="font-family:'Space Mono',monospace; font-size:12px; color:var(--muted); min-width:110px; text-align:center;">Fight ${fightIndex+1} of ${fightCount}</span>
+      <button id="nextFightBtn" class="fight-nav-btn" ${fightIndex>=fightCount-1?'disabled':''}>Next fight ▶</button>
+      <button id="jumpLatestFightBtn" class="fight-nav-btn" ${fightIndex>=fightCount-1?'disabled':''}>Jump to latest</button>
+    </div>
+  ` : '';
+
+  const timePanel = timeRange ? `
+    <div class="panel" style="text-align:center; padding:12px 16px;">
+      ${timeRange}
+    </div>
+  ` : '';
+
+  const fightNav = navPanel + timePanel;
+
+  const panelHtml = {
+    'char-breakdown': `
+    <div class="panel" draggable="false" data-panel-id="char-breakdown">
+      <span class="drag-handle" title="Drag to reorder">⠿⠿</span>
+      <h2>Character breakdown</h2>
+      <p class="sub">Full stats per character across the parsed log.</p>
+      <table>
+        <thead><tr>
+          <th>Character</th>
+          <th class="num grp-dmg">Dmg Total</th><th class="num grp-dmg">Dmg %</th><th class="num grp-dmg">Dmg/Turn</th>
+          <th class="num grp-heal">Heal Total</th><th class="num grp-heal">Heal %</th><th class="num grp-heal">Heal/Turn</th>
+        </tr></thead>
+        <tbody id="statTable"></tbody>
+      </table>
+    </div>`,
+
+    'party-comp': `
+    <div class="panel" draggable="false" data-panel-id="party-comp">
+      <div class="panel-head">
+        <div>
+          <h2>Party composition</h2>
+          <p class="sub">Whole-party total broken into each character's share.</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:2px;">
+          <div class="toggle">
+            <button id="tgDmg" class="active dmg-mode">Damage</button>
+            <button id="tgHeal" class="heal-mode">Healing</button>
+          </div>
+          <span class="drag-handle inline" title="Drag to reorder">⠿⠿</span>
+        </div>
+      </div>
+      <div class="comp-bar" id="compBar"></div>
+      <div class="comp-legend" id="compLegend"></div>
+    </div>`,
+
+    'total-chart': `
+    <div class="panel" draggable="false" data-panel-id="total-chart">
+      <span class="drag-handle" title="Drag to reorder">⠿⠿</span>
+      <h2 id="totalChartTitle">Total damage, by character</h2>
+      <p class="sub">One bar per character — easier to compare at a glance than the composition bar.</p>
+      <div class="chart-wrap"><canvas id="totalChartCanvas"></canvas></div>
+    </div>`,
+
+    'turn-chart': `
+    <div class="panel" draggable="false" data-panel-id="turn-chart">
+      <span class="drag-handle" title="Drag to reorder">⠿⠿</span>
+      <h2 id="chartTitle">Damage per turn, by character</h2>
+      <p class="sub">Stacked breakdown of the selected metric across turns.</p>
+      <div class="chart-wrap"><canvas id="turnChartCanvas"></canvas></div>
+    </div>`,
+
+    'log-preview': `
+    <div class="panel" draggable="false" data-panel-id="log-preview">
+      <span class="drag-handle" title="Drag to reorder">⠿⠿</span>
+      <h2>Log preview</h2>
+      <p class="sub">Blue = spell cast (sets current caster). Colored = damage/heal credited to that caster. Gold = turn boundary. Green = start keyword. Red = stop keyword. Faded = outside the active window. Very faint = other channel (chat/system), ignored. Italic strikethrough = hidden by character filter. Dim = unmatched. Strikethrough = skipped duplicate.</p>
+      <div class="log-preview" id="logPreview"></div>
+    </div>`,
+  };
+
+  const panelsHtml = panelOrder.map(id => panelHtml[id] || '').join('');
+
+  els.main.innerHTML = `
+    ${fightNav}
+    <div class="stat-grid">
+      <div class="stat dmg"><div class="k">Party damage</div><div class="v">${partyDmg.toLocaleString()}</div></div>
+      <div class="stat heal"><div class="k">Party healing</div><div class="v">${partyHeal.toLocaleString()}</div></div>
+      <div class="stat"><div class="k">Turns logged</div><div class="v">${turnsSorted.length}</div></div>
+      <div class="stat"><div class="k">Top damage dealer</div><div class="v" style="color:${topDmg[1].color}">${topDmg[1].display}<br><small>${total(topDmg[1].dmg).toLocaleString()} dmg</small></div></div>
+    </div>
+
+    ${panelsHtml}
+  `;
+
+  initPanelDragAndDrop();
+
+  document.getElementById('tgDmg').addEventListener('click', ()=>{ metric='dmg'; updateToggle(); try{ renderMetricViews(); }catch(e){ console.error(e); } });
+  document.getElementById('tgHeal').addEventListener('click', ()=>{ metric='heal'; updateToggle(); try{ renderMetricViews(); }catch(e){ console.error(e); } });
+
+  const prevFightBtn = document.getElementById('prevFightBtn');
+  const nextFightBtn = document.getElementById('nextFightBtn');
+  const jumpLatestFightBtn = document.getElementById('jumpLatestFightBtn');
+  prevFightBtn && prevFightBtn.addEventListener('click', ()=> stepFight(-1));
+  nextFightBtn && nextFightBtn.addEventListener('click', ()=> stepFight(1));
+  jumpLatestFightBtn && jumpLatestFightBtn.addEventListener('click', jumpToLatestFight);
+
+  // table (always both metrics)
+  const tbody = document.getElementById('statTable');
+  sortedByDmg.forEach(([key,c])=>{
+    const td = total(c.dmg), th_ = total(c.heal);
+    const dpt = td / Math.max(turnsSorted.length,1);
+    const hpt = th_ / Math.max(turnsSorted.length,1);
+    const dpct = partyDmg ? (td/partyDmg*100) : 0;
+    const hpct = partyHeal ? (th_/partyHeal*100) : 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><div class="char-cell"><div class="swatch" style="background:${c.color}"></div>${c.display}<button type="button" class="hide-x" data-name="${c.display}" title="Hide ${c.display}'s damage">×</button></div></td>
+      <td class="num">${td.toLocaleString()}</td>
+      <td class="num">${dpct.toFixed(1)}%</td>
+      <td class="num">${dpt.toFixed(1)}</td>
+      <td class="num">${th_.toLocaleString()}</td>
+      <td class="num">${hpct.toFixed(1)}%</td>
+      <td class="num">${hpt.toFixed(1)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  renderMetricViews();
+}
+
+function updateToggle(){
+  document.getElementById('tgDmg').classList.toggle('active', metric==='dmg');
+  document.getElementById('tgHeal').classList.toggle('active', metric==='heal');
+}
+
+function renderMetricViews(){
+  const {characters, turnsSorted} = lastParsed;
+  const key = metric === 'dmg' ? 'dmg' : 'heal';
+  const color = metric === 'dmg' ? getComputedStyle(document.documentElement).getPropertyValue('--dmg').trim() : getComputedStyle(document.documentElement).getPropertyValue('--heal').trim();
+
+  document.getElementById('chartTitle').textContent = (metric==='dmg' ? 'Damage' : 'Healing') + ' per turn, by character';
+
+  const sorted = Array.from(characters.entries())
+    .map(([k,c])=>[k,c, total(c[key])])
+    .filter(([,,t])=>t>0)
+    .sort((a,b)=> b[2]-a[2]);
+  const partyTotal = sorted.reduce((s,[,,t])=>s+t,0);
+
+  const compBar = document.getElementById('compBar');
+  const compLegend = document.getElementById('compLegend');
+  compBar.innerHTML = ''; compLegend.innerHTML = '';
+  sorted.forEach(([k,c,t])=>{
+    const pct = partyTotal ? (t/partyTotal*100) : 0;
+    const seg = document.createElement('div');
+    seg.className = 'comp-seg';
+    seg.style.background = c.color;
+    seg.style.width = pct + '%';
+    seg.title = `${c.display}: ${t.toLocaleString()} (${pct.toFixed(1)}%)`;
+    seg.textContent = pct > 7 ? pct.toFixed(0)+'%' : '';
+    compBar.appendChild(seg);
+
+    const item = document.createElement('div');
+    item.className = 'item';
+    item.innerHTML = `<div class="swatch" style="background:${c.color}"></div><span class="name">${c.display}</span><span class="pct">${t.toLocaleString()} · ${pct.toFixed(1)}%</span>`;
+    compLegend.appendChild(item);
+  });
+  if(sorted.length===0){
+    compLegend.innerHTML = `<span style="color:var(--muted); font-size:12px;">No ${metric==='dmg'?'damage':'healing'} recorded.</span>`;
+  }
+
+  document.getElementById('totalChartTitle').textContent = 'Total ' + (metric==='dmg' ? 'damage' : 'healing') + ', by character';
+
+  if(typeof Chart === 'undefined'){
+    const totalWrap = document.getElementById('totalChartCanvas').closest('.chart-wrap');
+    totalWrap.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--muted); font-size:12.5px; text-align:center; padding:0 30px;">Chart library failed to load (no network access in this preview). The composition bar and table above are unaffected — try opening the downloaded HTML file directly in a browser with internet access.</div>';
+  }else{
+    const totalCtx = document.getElementById('totalChartCanvas').getContext('2d');
+    if(totalChart) totalChart.destroy();
+    totalChart = new Chart(totalCtx, {
+      type: 'bar',
+      data: {
+        labels: sorted.map(([,c])=>c.display),
+        datasets: [{
+          label: metric==='dmg' ? 'Damage' : 'Healing',
+          data: sorted.map(([,,t])=>t),
+          backgroundColor: sorted.map(([,c])=>c.color),
+          borderRadius: 3,
+          maxBarThickness: 60,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins:{
+          legend:{ display:false },
+          tooltip:{ callbacks:{ label: ctx => ctx.parsed.y.toLocaleString() } }
+        },
+        scales:{
+          x:{ grid:{ display:false }, ticks:{ color:'#838798', font:{family:"'Space Mono',monospace", size:10.5} } },
+          y:{ grid:{ color:'#272c3a' }, ticks:{ color:'#838798', font:{family:"'Space Mono',monospace", size:10} }, beginAtZero:true }
+        }
+      }
+    });
+  }
+
+  const ctx = document.getElementById('turnChartCanvas').getContext('2d');
+  const datasets = sorted.map(([k,c])=>{
+    const byTurn = {};
+    c[key].forEach(e=>{ byTurn[e.turn] = (byTurn[e.turn]||0) + e.amount; });
+    return {
+      label: c.display,
+      data: turnsSorted.map(t => byTurn[t] || 0),
+      backgroundColor: c.color,
+      borderRadius: 2,
+      maxBarThickness: 46,
+    };
+  });
+
+  if(typeof Chart === 'undefined'){
+    const wrap = document.getElementById('turnChartCanvas').closest('.chart-wrap');
+    wrap.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--muted); font-size:12.5px; text-align:center; padding:0 30px;">Chart library failed to load (no network access in this preview). The composition bar and table above are unaffected — try opening the downloaded HTML file directly in a browser with internet access.</div>';
+    return;
+  }
+
+  if(turnChart) turnChart.destroy();
+  turnChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: turnsSorted.map(t=>'Turn '+t), datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins:{
+        legend:{ position:'bottom', labels:{ color:'#e9e7e0', font:{family:"'Inter',sans-serif", size:11.5}, boxWidth:11, boxHeight:11, usePointStyle:true, pointStyle:'rectRounded' } },
+        tooltip:{ mode:'index', intersect:false }
+      },
+      scales:{
+        x:{ stacked:true, grid:{ color:'#272c3a' }, ticks:{ color:'#838798', font:{family:"'Space Mono',monospace", size:10} } },
+        y:{ stacked:true, grid:{ color:'#272c3a' }, ticks:{ color:'#838798', font:{family:"'Space Mono',monospace", size:10} }, beginAtZero:true }
+      }
+    }
+  });
+}
+
+function renderLogPreview(lineMeta){
+  let container = document.getElementById('logPreview');
+  if(!container){
+    els.main.innerHTML = `
+      <div class="panel">
+        <h2>Log preview</h2>
+        <p class="sub">Blue = spell cast. Colored = damage/heal credited to that caster. Gold = turn boundary. Green = start keyword. Red = stop keyword. Faded = outside the active window. Very faint = other channel (chat/system), ignored. Italic strikethrough = hidden by character filter. Dim = unmatched. Strikethrough = skipped duplicate.</p>
+        <div class="log-preview" id="logPreview"></div>
+      </div>`;
+    container = document.getElementById('logPreview');
+  }
+  container.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  lineMeta.forEach(lm=>{
+    if(lm.type === 'blank'){ frag.appendChild(document.createElement('br')); return; }
+    const div = document.createElement('div');
+    let cls = 'ln';
+    let style = '';
+    if(lm.type === 'turn') cls += ' turn';
+    else if(lm.type === 'cast'){ cls += ' cast'; }
+    else if(lm.type === 'effect'){ style = `color:${lm.color}`; }
+    else if(lm.type === 'other'){ cls += ' other'; }
+    else if(lm.type === 'dup'){ cls += ' dup'; }
+    else if(lm.type === 'start'){ cls += ' start'; }
+    else if(lm.type === 'stop'){ cls += ' stop'; }
+    else if(lm.type === 'skip'){ cls += ' skip'; }
+    else if(lm.type === 'channel'){ cls += ' channel'; }
+    else if(lm.type === 'boundary'){ cls += ' boundary'; }
+    div.className = cls;
+    if(style) div.setAttribute('style', style);
+    div.textContent = lm.text;
+    frag.appendChild(div);
+  });
+  container.appendChild(frag);
+}
+</script>
+</body>
+</html>

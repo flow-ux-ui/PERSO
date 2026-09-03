@@ -1,0 +1,16 @@
+{
+  "name": "ayenyzer-overlay",
+  "version": "0.1.0",
+  "description": "Wakfu combat log analyzer, as an in-game overlay (Electron).",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "package:win": "electron-packager . Ayenyzer --platform=win32 --arch=x64 --out=dist --overwrite --icon=build/icon.ico",
+    "package:linux": "electron-packager . Ayenyzer --platform=linux --arch=x64 --out=dist --overwrite"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-packager": "^17.1.2"
+  }
+}
