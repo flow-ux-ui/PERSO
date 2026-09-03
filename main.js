@@ -286,3 +286,27 @@ ipcMain.handle('mirror:getStatus', () => ({ running: !!mirrorProc }));
 ipcMain.on('overlay:requestStartWatching', () => {
   if(configWin && !configWin.isDestroyed()) configWin.webContents.send('config:startWatching');
 });
+
+// wakfu-log-mirror.ps1 now appends forever (never overwrites), by design —
+// so it survives WAKFU's own log rotation and script restarts mid-fight
+// without losing whatever's being tracked live. That means it can also grow
+// indefinitely across a long session, so this deletes the mirror file and
+// its .offset sidecar to start clean. Paths are the mirror script's fixed
+// convention (Documents\WakfuLogMirror\Wakfu-live.log[.offset]) — main.js
+// doesn't run the script, so it can't read the paths back out of it.
+ipcMain.handle('mirror:resetFiles', async () => {
+  if(mirrorProc){
+    const pid = mirrorProc.pid;
+    mirrorProc = null;
+    await new Promise((resolve) => exec(`taskkill /pid ${pid} /t /f`, () => resolve()));
+    broadcastMirrorStatus(false);
+  }
+  const mirrorDest = path.join(app.getPath('documents'), 'WakfuLogMirror', 'Wakfu-live.log');
+  try{
+    await fs.promises.rm(mirrorDest, { force: true });
+    await fs.promises.rm(`${mirrorDest}.offset`, { force: true });
+    return { ok: true };
+  }catch(e){
+    return { ok: false, error: e.message };
+  }
+});

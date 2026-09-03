@@ -30,7 +30,12 @@
   body{margin:0; background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh;}
   .wrap{display:grid; grid-template-columns:360px 1fr; gap:1px; background:var(--border); min-height:100vh;}
   @media (max-width: 940px){ .wrap{grid-template-columns:1fr;} }
-  aside, main{background:var(--bg);}
+  /* grid items default to min-width:auto, i.e. they won't shrink below their
+     content's intrinsic min width (a wide table, a chart, ...) — harmless
+     while growing, but it's exactly why shrinking the window used to get
+     stuck instead of reflowing. min-width:0 lets them actually shrink;
+     individual children (e.g. .table-scroll) handle their own overflow. */
+  aside, main{background:var(--bg); min-width:0;}
   aside{padding:22px 20px 40px;}
   main{padding:22px 26px 40px;}
 
@@ -85,8 +90,11 @@
   .hidden-chip button{background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; line-height:1; padding:2px 6px; border-radius:50%;}
   .hidden-chip button:hover{color:#fff; background:#3a3f4f;}
 
-  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:6px; overflow:hidden; margin-bottom:26px;}
-  @media (max-width:700px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
+  /* auto-fit/minmax reflows the tile count to whatever width .main
+     actually has (which isn't the same as the viewport width once the
+     360px sidebar is in play) — a fixed column count + viewport media
+     query got this wrong and squeezed tiles at in-between window sizes */
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:6px; overflow:hidden; margin-bottom:26px;}
   .stat{background:var(--panel); padding:16px 16px;}
   .stat .k{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-family:'Space Mono',monospace; margin-bottom:6px;}
   .stat .v{font-family:'Oswald',sans-serif; font-weight:600; font-size:24px; color:var(--text);}
@@ -118,6 +126,10 @@
   .comp-legend .item .name{font-family:'Space Mono',monospace;}
   .comp-legend .item .pct{color:var(--muted);}
 
+  /* the character breakdown table has 7 columns and doesn't wrap — without
+     this, a narrow window forces horizontal scroll on the whole page
+     instead of just the table itself */
+  .table-scroll{overflow-x:auto;}
   table{width:100%; border-collapse:collapse; margin-top:4px;}
   th,td{text-align:left; padding:9px 8px; font-size:12px; border-bottom:1px solid var(--border);}
   th{font-family:'Oswald',sans-serif; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); font-weight:600;}
@@ -132,6 +144,7 @@
   .log-preview{max-height:240px; overflow-y:auto; background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:10px 12px; font-family:'Space Mono',monospace; font-size:10.5px; line-height:1.7; margin-top:8px;}
   .log-preview .ln{white-space:pre-wrap; word-break:break-word;}
   .log-preview .ln.turn{color:var(--turn); font-weight:600;}
+  .log-preview .ln.death{color:var(--dmg); font-weight:700; opacity:.85;}
   .log-preview .ln.cast{color:var(--cast);}
   .log-preview .ln.other{color:var(--dim);}
   .log-preview .ln.dup{color:var(--dim); text-decoration:line-through; opacity:.6;}
@@ -181,6 +194,12 @@
       <button id="resetWatchBtn" style="display:none;">Reset Tracking</button>
     </div>
     <div class="status" id="liveStatus"></div>
+    <div class="btn-row">
+      <button id="resetMirrorBtn">Reset Mirror File</button>
+    </div>
+    <div class="hint">
+      The mirror script (<code>wakfu-log-mirror.ps1</code>) only ever appends, so it survives WAKFU's own log rotation without losing a fight being tracked live — but it also grows forever across a long session. This stops the mirror (if running) and deletes its output file, so the next Start begins clean. You'll need to click "Watch File (Live)" again afterwards.
+    </div>
     </div>
 
     <div class="section-label collapsible open" data-target="sec-overlay">In-game overlay <span class="chev">▸</span></div>
@@ -199,7 +218,7 @@
     <div class="field">
       <label>Caster line pattern (regex)</label>
       <input type="text" id="casterPattern" value="(?&lt;caster&gt;[^:\]]+?) lance le sort (?&lt;spell&gt;.+)$">
-      <div class="hint">Marks who is acting. Every damage/heal line that follows is credited to this caster, until the next match. Needs a <code>caster</code> group.</div>
+      <div class="hint">Marks who is acting. Every damage/heal line that follows is credited to this caster, until the next match. Needs a <code>caster</code> group. Also drives round tracking: whoever casts first each round is the "round leader" — the round advances when they cast again (after someone else has), rather than after a fixed number of individual turns. If the leader dies (see Death pattern below), the next distinct caster takes over as leader.</div>
     </div>
     <div class="field">
       <label>HP change pattern (regex)</label>
@@ -207,9 +226,14 @@
       <div class="hint">Matches e.g. <code>Ayendas: +1 810 PV (Feu)</code> (heal) or <code>Nox: -72 082 PV (Air)</code> (damage). Needs <code>target</code>, <code>sign</code>, <code>amount</code> groups. Space thousand-separators are handled automatically.</div>
     </div>
     <div class="field">
-      <label>Turn boundary pattern (regex)</label>
-      <input type="text" id="turnPattern" value="secondes report[ée]e?s? pour le tour suivant">
-      <div class="hint">Each match starts a new turn. Add a <code>(?&lt;num&gt;\d+)</code> group instead if your log states explicit turn numbers.</div>
+      <label>Death pattern (regex, optional)</label>
+      <input type="text" id="deathPattern" value="(?&lt;name&gt;[^:\]]+?) est KO\s*!">
+      <div class="hint">Matches e.g. <code>Pokamon Kaz est KO !</code>. Needs a <code>name</code> group. Used only to hand off round-tracking (see below) if the current round leader dies — leave empty to disable.</div>
+    </div>
+    <div class="field">
+      <label>Excluded from round leadership (optional)</label>
+      <input type="text" id="excludedLeaders" placeholder="e.g. Nox">
+      <div class="hint">Comma-separated names that can never become the round leader (see Caster line pattern above), even if they cast first. For a boss that acts more than once per round — e.g. plays first, then interjects between every player's turn — counting it as the round leader would advance the round on every one of its interjections instead of once per lap. Excluding it just skips straight to the next distinct caster instead.</div>
     </div>
     </div>
 
@@ -337,7 +361,8 @@ const els = {
   rawText: document.getElementById('rawText'),
   casterPattern: document.getElementById('casterPattern'),
   effectPattern: document.getElementById('effectPattern'),
-  turnPattern: document.getElementById('turnPattern'),
+  deathPattern: document.getElementById('deathPattern'),
+  excludedLeaders: document.getElementById('excludedLeaders'),
   channelMarker: document.getElementById('channelMarker'),
   startKeyword: document.getElementById('startKeyword'),
   stopKeyword: document.getElementById('stopKeyword'),
@@ -359,6 +384,7 @@ const els = {
   watchBtn: document.getElementById('watchBtn'),
   stopWatchBtn: document.getElementById('stopWatchBtn'),
   resetWatchBtn: document.getElementById('resetWatchBtn'),
+  resetMirrorBtn: document.getElementById('resetMirrorBtn'),
   liveStatus: document.getElementById('liveStatus'),
   overlayEnabled: document.getElementById('overlayEnabled'),
 };
@@ -417,7 +443,8 @@ function createFight(){
   return {
     characters: new Map(), // key lower -> {display, color, dmg:[{turn,amount,target}], heal:[...]}
     turn: 1,
-    turnBoundaries: 0,
+    turnBoundaries: 0, // now counts full-round transitions, not individual character-turn-end lines
+    roundLeader: null, // lowercased name of whoever cast first this round — the round advances when they cast again
     lastCaster: null,
     effectiveCaster: null, // set when the current actor is a tracked summon, to redirect its damage to its owner
     ruleOwners: new Map(), // ownership-rule index -> current owner name (see parseOwnershipRules)
@@ -513,9 +540,10 @@ function pushMeta(state, obj){
   state.lineMeta.push(obj);
 }
 
-function processLines(lines, state, casterRe, effectRe, turnRe, dedupOn, dedupWindowMs, startRe, stopRe, hiddenSet, hideHealToo, rules, channelMarker, combatBoundaryMarker){
+function processLines(lines, state, casterRe, effectRe, deathRe, dedupOn, dedupWindowMs, startRe, stopRe, hiddenSet, hideHealToo, rules, channelMarker, combatBoundaryMarker, excludedLeaderSet){
   rules = rules || [];
   hiddenSet = hiddenSet || new Set();
+  excludedLeaderSet = excludedLeaderSet || new Set();
   for(const raw of lines){
     const line = raw;
     if(!line.trim()){ pushMeta(state, {text:line, type:'blank'}); state.prevLineTrimmed = null; state.recentLines.length = 0; continue; }
@@ -598,19 +626,40 @@ function processLines(lines, state, casterRe, effectRe, turnRe, dedupOn, dedupWi
     state.prevLineTrimmed = dkey;
     if(lineTs !== null) state.recentLines.push({key:dkey, ts:lineTs});
 
-    const tm = turnRe.exec(line);
-    if(tm){
-      fight.turnBoundaries++;
-      if(tm.groups && tm.groups.num) fight.turn = parseInt(tm.groups.num,10);
-      else fight.turn++;
-      pushMeta(state, {text:line, type:'turn'});
+    // A death hands round-tracking off: if the entity that just died was the
+    // current round leader, forget them — the next distinct caster becomes
+    // the new leader, same as how the very first caster of the fight became
+    // leader in the first place.
+    const deathM = deathRe && deathRe.exec(line);
+    if(deathM && deathM.groups && deathM.groups.name){
+      const deadLower = deathM.groups.name.trim().toLowerCase();
+      if(fight.roundLeader === deadLower) fight.roundLeader = null;
+      pushMeta(state, {text:line, type:'death'});
       continue;
     }
 
     const cm = casterRe.exec(line);
     if(cm && cm.groups && cm.groups.caster){
-      fight.lastCaster = cm.groups.caster.trim();
-      const casterLower = fight.lastCaster.toLowerCase();
+      const newCaster = cm.groups.caster.trim();
+      const casterLower = newCaster.toLowerCase();
+      const prevCasterLower = fight.lastCaster ? fight.lastCaster.toLowerCase() : null;
+
+      // Round tracking: whoever casts first (each fight, or after the
+      // previous leader died) is the round leader. The round only advances
+      // when the leader casts again AFTER someone else has acted in
+      // between — not on every one of the leader's own lines, since a
+      // single turn can include several casts. Entities in
+      // excludedLeaderSet (e.g. a boss that interjects between every
+      // player's turn) are skipped over entirely — they can never become
+      // leader, so their extra casts never advance the round.
+      if(fight.roundLeader === null){
+        if(!excludedLeaderSet.has(casterLower)) fight.roundLeader = casterLower;
+      }else if(casterLower === fight.roundLeader && prevCasterLower !== fight.roundLeader){
+        fight.turn++;
+        fight.turnBoundaries++;
+      }
+
+      fight.lastCaster = newCaster;
 
       // Is this caster actually a tracked summon acting on its own turn?
       // If so, redirect its damage/heal to its owner instead of itself.
@@ -736,15 +785,16 @@ function parseOwnershipRules(text){
 function readPatterns(){
   const casterPatStr = els.casterPattern.value;
   const effectPatStr = els.effectPattern.value;
-  const turnPatStr = els.turnPattern.value;
+  const deathPatStr = els.deathPattern.value.trim();
 
   if(!/\(\?<caster>/.test(casterPatStr)){ return {error:'Caster pattern needs a (?&lt;caster&gt;) group.'}; }
   if(!/\(\?<target>/.test(effectPatStr) || !/\(\?<sign>/.test(effectPatStr) || !/\(\?<amount>/.test(effectPatStr)){ return {error:'HP change pattern needs (?&lt;target&gt;), (?&lt;sign&gt;) and (?&lt;amount&gt;) groups.'}; }
+  if(deathPatStr && !/\(\?<name>/.test(deathPatStr)){ return {error:'Death pattern needs a (?&lt;name&gt;) group.'}; }
 
   const casterRe = buildRegex(casterPatStr, '');
   const effectRe = buildRegex(effectPatStr, '');
-  const turnRe = buildRegex(turnPatStr, '');
-  if(!casterRe || !effectRe || !turnRe){ return {error:'One of the regex patterns is invalid.'}; }
+  const deathRe = deathPatStr ? buildRegex(deathPatStr, '') : null;
+  if(!casterRe || !effectRe || (deathPatStr && !deathRe)){ return {error:'One of the regex patterns is invalid.'}; }
 
   const startRe = buildKeywordRegex(els.startKeyword.value);
   const stopRe = buildKeywordRegex(els.stopKeyword.value);
@@ -754,7 +804,8 @@ function readPatterns(){
   const channelMarker = els.channelMarker.value.trim();
   const dedupWindowMs = Math.max(0, parseInt(els.dedupWindowMs.value, 10) || 0);
   const combatBoundaryMarker = els.combatBoundaryMarker.value.trim();
-  return {casterRe, effectRe, turnRe, startRe, stopRe, hiddenSet, hideHealToo, ownershipRules, channelMarker, dedupWindowMs, combatBoundaryMarker};
+  const excludedLeaderSet = new Set(els.excludedLeaders.value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
+  return {casterRe, effectRe, deathRe, startRe, stopRe, hiddenSet, hideHealToo, ownershipRules, channelMarker, dedupWindowMs, combatBoundaryMarker, excludedLeaderSet};
 }
 
 function finalizeAndRender(state, statusHtml){
@@ -784,7 +835,7 @@ function finalizeAndRender(state, statusHtml){
   }else{
     const dupNote = els.dedupToggle.checked ? ` — ${state.dupSkipped} duplicate line(s) skipped.` : '';
     const fightNote = fights.length > 1 ? ` — viewing fight ${idx+1} of ${fights.length}.` : '';
-    els.status.innerHTML = `<span class="ok">Parsed ${characters.size} entity(ies) across ${turnsSorted.length} turn(s)</span> — ${fight.turnBoundaries} turn boundary line(s) found.${dupNote}${fightNote}`;
+    els.status.innerHTML = `<span class="ok">Parsed ${characters.size} entity(ies) across ${turnsSorted.length} turn(s)</span> — ${fight.turnBoundaries} round transition(s) detected (round leader: ${fight.roundLeader || '—'}).${dupNote}${fightNote}`;
   }
 
   renderRoster(characters);
@@ -912,7 +963,7 @@ function parseAndRender(){
 
   const state = createParseState(!pat.startRe);
   const lines = text.split(/\r?\n/);
-  processLines(lines, state, pat.casterRe, pat.effectRe, pat.turnRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker);
+  processLines(lines, state, pat.casterRe, pat.effectRe, pat.deathRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker, pat.excludedLeaderSet);
 
   if(pat.startRe && !state.sawStart){
     els.status.innerHTML = '<span class="warn">Start keyword never appears in this log — nothing parsed. Check the keyword.</span>';
@@ -961,6 +1012,20 @@ document.querySelectorAll('.section-label.collapsible').forEach(label=>{
 els.watchBtn && els.watchBtn.addEventListener('click', startWatching);
 els.stopWatchBtn && els.stopWatchBtn.addEventListener('click', stopWatching);
 els.resetWatchBtn && els.resetWatchBtn.addEventListener('click', resetWatchTracking);
+
+els.resetMirrorBtn && els.resetMirrorBtn.addEventListener('click', async ()=>{
+  if(!confirm('Stop the mirror script and delete Wakfu-live.log? You\'ll need to click "Watch File (Live)" again afterwards.')) return;
+  if(watchPath) stopWatching();
+  els.resetMirrorBtn.disabled = true;
+  try{
+    const res = await window.api.resetMirrorFiles();
+    els.liveStatus.innerHTML = res.ok
+      ? `<span class="ok">Mirror file reset.</span>`
+      : `<span class="warn">Couldn't reset the mirror file: ${res.error}</span>`;
+  }finally{
+    els.resetMirrorBtn.disabled = false;
+  }
+});
 
 // Overlay's Start button asks us to kick off Live mode too — same flow as
 // clicking "Watch File (Live)" here, native file picker included.
@@ -1190,7 +1255,7 @@ async function pollWatch(){
   }
 
   const newLines = newText.split(/\r?\n/).filter((l,i,arr)=> !(i===arr.length-1 && l===''));
-  processLines(newLines, watchState, pat.casterRe, pat.effectRe, pat.turnRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker);
+  processLines(newLines, watchState, pat.casterRe, pat.effectRe, pat.deathRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker, pat.excludedLeaderSet);
 
   let statusMsg;
   const curFight = watchState.fights[watchState.fights.length - 1];
@@ -1307,6 +1372,7 @@ function renderMain(){
       <span class="drag-handle" title="Drag to reorder">⠿⠿</span>
       <h2>Character breakdown</h2>
       <p class="sub">Full stats per character across the parsed log.</p>
+      <div class="table-scroll">
       <table>
         <thead><tr>
           <th>Character</th>
@@ -1315,6 +1381,7 @@ function renderMain(){
         </tr></thead>
         <tbody id="statTable"></tbody>
       </table>
+      </div>
     </div>`,
 
     'party-comp': `
@@ -1356,7 +1423,7 @@ function renderMain(){
     <div class="panel" draggable="false" data-panel-id="log-preview">
       <span class="drag-handle" title="Drag to reorder">⠿⠿</span>
       <h2>Log preview</h2>
-      <p class="sub">Blue = spell cast (sets current caster). Colored = damage/heal credited to that caster. Gold = turn boundary. Green = start keyword. Red = stop keyword. Faded = outside the active window. Very faint = other channel (chat/system), ignored. Italic strikethrough = hidden by character filter. Dim = unmatched. Strikethrough = skipped duplicate.</p>
+      <p class="sub">Blue = spell cast (sets current caster). Colored = damage/heal credited to that caster. Red bold = death (hands off round-tracking). Green = start keyword. Red = stop keyword. Faded = outside the active window. Very faint = other channel (chat/system), ignored. Italic strikethrough = hidden by character filter. Dim = unmatched. Strikethrough = skipped duplicate.</p>
       <div class="log-preview" id="logPreview"></div>
     </div>`,
   };
@@ -1532,7 +1599,7 @@ function renderLogPreview(lineMeta){
     els.main.innerHTML = `
       <div class="panel">
         <h2>Log preview</h2>
-        <p class="sub">Blue = spell cast. Colored = damage/heal credited to that caster. Gold = turn boundary. Green = start keyword. Red = stop keyword. Faded = outside the active window. Very faint = other channel (chat/system), ignored. Italic strikethrough = hidden by character filter. Dim = unmatched. Strikethrough = skipped duplicate.</p>
+        <p class="sub">Blue = spell cast. Colored = damage/heal credited to that caster. Red bold = death (hands off round-tracking). Green = start keyword. Red = stop keyword. Faded = outside the active window. Very faint = other channel (chat/system), ignored. Italic strikethrough = hidden by character filter. Dim = unmatched. Strikethrough = skipped duplicate.</p>
         <div class="log-preview" id="logPreview"></div>
       </div>`;
     container = document.getElementById('logPreview');
@@ -1545,6 +1612,7 @@ function renderLogPreview(lineMeta){
     let cls = 'ln';
     let style = '';
     if(lm.type === 'turn') cls += ' turn';
+    else if(lm.type === 'death'){ cls += ' death'; }
     else if(lm.type === 'cast'){ cls += ' cast'; }
     else if(lm.type === 'effect'){ style = `color:${lm.color}`; }
     else if(lm.type === 'other'){ cls += ' other'; }

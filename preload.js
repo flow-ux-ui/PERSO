@@ -30,4 +30,8 @@ contextBridge.exposeInMainWorld('api', {
   // Overlay Start button -> config window's "Watch File (Live)" flow.
   requestStartWatching: () => ipcRenderer.send('overlay:requestStartWatching'),
   onRequestStartWatching: (cb) => ipcRenderer.on('config:startWatching', () => cb()),
+
+  // Stops the mirror script (if running) and deletes its output file + the
+  // .offset sidecar, so a long append-only mirror can be started clean.
+  resetMirrorFiles: () => ipcRenderer.invoke('mirror:resetFiles'),
 });
