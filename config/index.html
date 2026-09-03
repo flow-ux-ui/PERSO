@@ -145,6 +145,7 @@
   .log-preview .ln{white-space:pre-wrap; word-break:break-word;}
   .log-preview .ln.turn{color:var(--turn); font-weight:600;}
   .log-preview .ln.death{color:var(--dmg); font-weight:700; opacity:.85;}
+  .log-preview .ln.summon{color:var(--cast); font-style:italic;}
   .log-preview .ln.cast{color:var(--cast);}
   .log-preview .ln.other{color:var(--dim);}
   .log-preview .ln.dup{color:var(--dim); text-decoration:line-through; opacity:.6;}
@@ -234,6 +235,16 @@
       <label>Excluded from round leadership (optional)</label>
       <input type="text" id="excludedLeaders" placeholder="e.g. Nox">
       <div class="hint">Comma-separated names that can never become the round leader (see Caster line pattern above), even if they cast first. For a boss that acts more than once per round — e.g. plays first, then interjects between every player's turn — counting it as the round leader would advance the round on every one of its interjections instead of once per lap. Excluding it just skips straight to the next distinct caster instead.</div>
+    </div>
+    <div class="field">
+      <label>Summon owner pattern (regex, optional)</label>
+      <input type="text" id="summonOwnerPattern" value="(?&lt;owner&gt;[^:\]]+?): Invoque ">
+      <div class="hint">Matches e.g. <code>Pokamon Kaz: Invoque une créature du Gobgob</code>. Needs an <code>owner</code> group. Paired with Summon spawn pattern below to auto-detect summon ownership even when the summon has been renamed — see the hint there.</div>
+    </div>
+    <div class="field">
+      <label>Summon spawn pattern (regex, optional)</label>
+      <input type="text" id="summonSpawnPattern" value="fightId=\d+ (?&lt;name&gt;.+?) breed : \d+ \[-?\d+\] isControlledByAI=true">
+      <div class="hint">Matches the engine line logged when a summon joins the fight (not in the combat channel — e.g. <code>... fightId=1552065815 Test breed : 4723 [-1706442034503680] isControlledByAI=true obstacleId : 3 join the fight ...</code>). Needs a <code>name</code> group — this is the summon's <em>current</em> display name, however its owner renamed it. Since this line and a matching Summon owner line above land within a few ms of each other, whichever owner was seen most recently gets attached to the next spawn (dropped if unmatched for 5s). Once linked, damage the summon deals acting on its own turn is credited to its owner, same as a manually configured Ownership rule below — except this works automatically, without needing to list the summon by name (which a rename would break anyway). Leave either pattern empty to disable.</div>
     </div>
     </div>
 
@@ -363,6 +374,8 @@ const els = {
   effectPattern: document.getElementById('effectPattern'),
   deathPattern: document.getElementById('deathPattern'),
   excludedLeaders: document.getElementById('excludedLeaders'),
+  summonOwnerPattern: document.getElementById('summonOwnerPattern'),
+  summonSpawnPattern: document.getElementById('summonSpawnPattern'),
   channelMarker: document.getElementById('channelMarker'),
   startKeyword: document.getElementById('startKeyword'),
   stopKeyword: document.getElementById('stopKeyword'),
@@ -448,6 +461,8 @@ function createFight(){
     lastCaster: null,
     effectiveCaster: null, // set when the current actor is a tracked summon, to redirect its damage to its owner
     ruleOwners: new Map(), // ownership-rule index -> current owner name (see parseOwnershipRules)
+    pendingSummonOwner: null, // {owner, ts} — set by an "X: Invoque ..." line, consumed by the next summon spawn line
+    dynamicSummonOwners: new Map(), // summon name (lower) -> owner name, auto-detected — see summonOwnerRe/summonSpawnRe
     startTs: null, // timestamp (ms, day-offset corrected) of the first line seen for this fight
     endTs: null, // timestamp of the last line seen for this fight so far
   };
@@ -540,7 +555,7 @@ function pushMeta(state, obj){
   state.lineMeta.push(obj);
 }
 
-function processLines(lines, state, casterRe, effectRe, deathRe, dedupOn, dedupWindowMs, startRe, stopRe, hiddenSet, hideHealToo, rules, channelMarker, combatBoundaryMarker, excludedLeaderSet){
+function processLines(lines, state, casterRe, effectRe, deathRe, dedupOn, dedupWindowMs, startRe, stopRe, hiddenSet, hideHealToo, rules, channelMarker, combatBoundaryMarker, excludedLeaderSet, summonOwnerRe, summonSpawnRe){
   rules = rules || [];
   hiddenSet = hiddenSet || new Set();
   excludedLeaderSet = excludedLeaderSet || new Set();
@@ -584,6 +599,43 @@ function processLines(lines, state, casterRe, effectRe, deathRe, dedupOn, dedupW
       continue;
     }
 
+    const fight = state.fights[state.fights.length - 1];
+    const characters = fight.characters;
+
+    // Auto-detected summon ownership: a summon's display name can be
+    // renamed by its owner, so it can't be listed by name in the (manual)
+    // Ownership rules below. Instead this correlates two lines that always
+    // land within a few ms of each other: "<owner>: Invoque ..." (combat
+    // channel) names the OWNER, and the engine's "... breed : N [id]
+    // isControlledByAI=true ... join the fight" line (NOT in the combat
+    // channel, checked here before the channel filter for that reason)
+    // names the summon under whatever name it currently has. Whichever
+    // pending owner was seen most recently gets attached to the next such
+    // spawn — a stale pending owner (nothing spawned within 5s) is dropped
+    // rather than risk attaching to some unrelated later summon.
+    if(summonOwnerRe){
+      const som = summonOwnerRe.exec(line);
+      if(som && som.groups && som.groups.owner){
+        const lineTs = parseLineTimestampRaw(line);
+        fight.pendingSummonOwner = { owner: som.groups.owner.trim(), ts: lineTs };
+        pushMeta(state, {text:line, type:'other'});
+        continue;
+      }
+    }
+    if(summonSpawnRe){
+      const ssm = summonSpawnRe.exec(line);
+      if(ssm && ssm.groups && ssm.groups.name){
+        const summonName = ssm.groups.name.trim();
+        const lineTs = parseLineTimestampRaw(line);
+        const pending = fight.pendingSummonOwner;
+        const fresh = pending && (pending.ts === null || lineTs === null || lineTs - pending.ts <= 5000);
+        if(fresh) fight.dynamicSummonOwners.set(summonName.toLowerCase(), pending.owner);
+        fight.pendingSummonOwner = null;
+        pushMeta(state, {text:line, type: fresh ? 'summon' : 'other'});
+        continue;
+      }
+    }
+
     // Anything outside the combat channel is ignored for parsing purposes
     // (chat, engine/Lua noise, position sync, etc.) — start/stop keywords
     // were already checked above regardless of channel.
@@ -591,9 +643,6 @@ function processLines(lines, state, casterRe, effectRe, deathRe, dedupOn, dedupW
       pushMeta(state, {text:line, type:'channel'});
       continue;
     }
-
-    const fight = state.fights[state.fights.length - 1];
-    const characters = fight.characters;
 
     const dkey = dedupKey(line);
     const lineTs = parseLineTimestamp(line, state);
@@ -674,6 +723,9 @@ function processLines(lines, state, casterRe, effectRe, deathRe, dedupOn, dedupW
 
       // Is this caster actually a tracked summon acting on its own turn?
       // If so, redirect its damage/heal to its owner instead of itself.
+      // Manually configured rules (fixed summon names) take precedence;
+      // auto-detected ownership (see summonOwnerRe/summonSpawnRe above)
+      // covers summons that got renamed, so they can't be listed by name.
       let redirect = null;
       rules.forEach((rule, idx)=>{
         if(rule.summons.size && [...rule.summons].some(s => casterLower.includes(s) || s.includes(casterLower))){
@@ -681,6 +733,7 @@ function processLines(lines, state, casterRe, effectRe, deathRe, dedupOn, dedupW
           if(owner) redirect = owner;
         }
       });
+      if(!redirect) redirect = fight.dynamicSummonOwners.get(casterLower) || null;
       fight.effectiveCaster = redirect;
 
       // Does this cast make the caster the current "owner" of a rule (e.g. casting "Graine")?
@@ -753,6 +806,30 @@ function processLines(lines, state, casterRe, effectRe, deathRe, dedupOn, dedupW
 
     pushMeta(state, {text:line, type:'other'});
   }
+
+  // A summon can act (and deal damage under its own roster entry) before we
+  // ever observe the "Invoque"/"join the fight" pair that identifies its
+  // owner — e.g. it was already invoked before this batch of lines started.
+  // Once the link IS established, retroactively fold any such orphaned
+  // entry into the owner instead of leaving it stranded as its own
+  // character for the rest of the fight. Runs once per batch (offline: the
+  // whole log; live: each new chunk of lines) so it also catches links that
+  // only become known partway through.
+  state.fights.forEach(reconcileDynamicSummons);
+}
+
+// Merges a fight's standalone roster entries for names that turned out to be
+// tracked summons (see summonOwnerRe/summonSpawnRe in processLines) into
+// their owner's entry, then removes the standalone entry.
+function reconcileDynamicSummons(fight){
+  fight.dynamicSummonOwners.forEach((owner, summonNameLower) => {
+    const summonEntry = fight.characters.get(summonNameLower);
+    if(!summonEntry) return;
+    const ownerEntry = getChar(fight.characters, owner);
+    ownerEntry.dmg.push(...summonEntry.dmg);
+    ownerEntry.heal.push(...summonEntry.heal);
+    fight.characters.delete(summonNameLower);
+  });
 }
 
 // Turns a plain keyword like "start" into a regex matching lines that end
@@ -797,15 +874,23 @@ function readPatterns(){
   const casterPatStr = els.casterPattern.value;
   const effectPatStr = els.effectPattern.value;
   const deathPatStr = els.deathPattern.value.trim();
+  const summonOwnerPatStr = els.summonOwnerPattern.value.trim();
+  const summonSpawnPatStr = els.summonSpawnPattern.value.trim();
 
   if(!/\(\?<caster>/.test(casterPatStr)){ return {error:'Caster pattern needs a (?&lt;caster&gt;) group.'}; }
   if(!/\(\?<target>/.test(effectPatStr) || !/\(\?<sign>/.test(effectPatStr) || !/\(\?<amount>/.test(effectPatStr)){ return {error:'HP change pattern needs (?&lt;target&gt;), (?&lt;sign&gt;) and (?&lt;amount&gt;) groups.'}; }
   if(deathPatStr && !/\(\?<name>/.test(deathPatStr)){ return {error:'Death pattern needs a (?&lt;name&gt;) group.'}; }
+  if(summonOwnerPatStr && !/\(\?<owner>/.test(summonOwnerPatStr)){ return {error:'Summon owner pattern needs a (?&lt;owner&gt;) group.'}; }
+  if(summonSpawnPatStr && !/\(\?<name>/.test(summonSpawnPatStr)){ return {error:'Summon spawn pattern needs a (?&lt;name&gt;) group.'}; }
 
   const casterRe = buildRegex(casterPatStr, '');
   const effectRe = buildRegex(effectPatStr, '');
   const deathRe = deathPatStr ? buildRegex(deathPatStr, '') : null;
-  if(!casterRe || !effectRe || (deathPatStr && !deathRe)){ return {error:'One of the regex patterns is invalid.'}; }
+  const summonOwnerRe = summonOwnerPatStr ? buildRegex(summonOwnerPatStr, '') : null;
+  const summonSpawnRe = summonSpawnPatStr ? buildRegex(summonSpawnPatStr, '') : null;
+  if(!casterRe || !effectRe || (deathPatStr && !deathRe) || (summonOwnerPatStr && !summonOwnerRe) || (summonSpawnPatStr && !summonSpawnRe)){
+    return {error:'One of the regex patterns is invalid.'};
+  }
 
   const startRe = buildKeywordRegex(els.startKeyword.value);
   const stopRe = buildKeywordRegex(els.stopKeyword.value);
@@ -816,7 +901,7 @@ function readPatterns(){
   const dedupWindowMs = Math.max(0, parseInt(els.dedupWindowMs.value, 10) || 0);
   const combatBoundaryMarker = els.combatBoundaryMarker.value.trim();
   const excludedLeaderSet = new Set(els.excludedLeaders.value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
-  return {casterRe, effectRe, deathRe, startRe, stopRe, hiddenSet, hideHealToo, ownershipRules, channelMarker, dedupWindowMs, combatBoundaryMarker, excludedLeaderSet};
+  return {casterRe, effectRe, deathRe, startRe, stopRe, hiddenSet, hideHealToo, ownershipRules, channelMarker, dedupWindowMs, combatBoundaryMarker, excludedLeaderSet, summonOwnerRe, summonSpawnRe};
 }
 
 function finalizeAndRender(state, statusHtml){
@@ -998,7 +1083,7 @@ function parseAndRender(){
 
   const state = createParseState(!pat.startRe);
   const lines = text.split(/\r?\n/);
-  processLines(lines, state, pat.casterRe, pat.effectRe, pat.deathRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker, pat.excludedLeaderSet);
+  processLines(lines, state, pat.casterRe, pat.effectRe, pat.deathRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker, pat.excludedLeaderSet, pat.summonOwnerRe, pat.summonSpawnRe);
 
   if(pat.startRe && !state.sawStart){
     els.status.innerHTML = '<span class="warn">Start keyword never appears in this log — nothing parsed. Check the keyword.</span>';
@@ -1290,7 +1375,7 @@ async function pollWatch(){
   }
 
   const newLines = newText.split(/\r?\n/).filter((l,i,arr)=> !(i===arr.length-1 && l===''));
-  processLines(newLines, watchState, pat.casterRe, pat.effectRe, pat.deathRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker, pat.excludedLeaderSet);
+  processLines(newLines, watchState, pat.casterRe, pat.effectRe, pat.deathRe, els.dedupToggle.checked, pat.dedupWindowMs, pat.startRe, pat.stopRe, pat.hiddenSet, pat.hideHealToo, pat.ownershipRules, pat.channelMarker, pat.combatBoundaryMarker, pat.excludedLeaderSet, pat.summonOwnerRe, pat.summonSpawnRe);
 
   let statusMsg;
   const curFight = watchState.fights[watchState.fights.length - 1];
@@ -1676,6 +1761,7 @@ function renderLogPreview(lineMeta){
     let style = '';
     if(lm.type === 'turn') cls += ' turn';
     else if(lm.type === 'death'){ cls += ' death'; }
+    else if(lm.type === 'summon'){ cls += ' summon'; }
     else if(lm.type === 'cast'){ cls += ' cast'; }
     else if(lm.type === 'effect'){ style = `color:${lm.color}`; }
     else if(lm.type === 'other'){ cls += ' other'; }
