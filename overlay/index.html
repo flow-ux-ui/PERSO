@@ -15,6 +15,7 @@
   body{font-family:'Segoe UI',system-ui,sans-serif; color:var(--text); -webkit-user-select:none; user-select:none;}
 
   .card{
+    position:relative;
     margin:8px;
     background:rgba(12,14,19,0.78);
     border:1px solid rgba(255,255,255,0.08);
@@ -29,15 +30,44 @@
   .head{
     -webkit-app-region:drag;
     display:flex; align-items:center; justify-content:space-between;
-    padding:8px 10px 6px;
+    /* extra right padding keeps the Start/Stop button clear of the
+       always-on-top drag handle window floating over the card's
+       top-right corner (see HANDLE_SIZE/HANDLE_MARGIN in main.js) */
+    padding:8px 22px 6px 10px;
     font-size:11px; letter-spacing:.06em; text-transform:uppercase;
     color:var(--muted);
     flex:none;
   }
   .head .brand{color:var(--dmg); font-weight:700;}
   .head .meta{font-family:'Consolas','Space Mono',monospace; font-size:10.5px;}
-  .dot{width:7px; height:7px; border-radius:50%; flex:none; margin-left:6px; background:#565b6b;}
+  .dot{
+    position:absolute;
+    right:4px;
+    bottom:4px;
+    width:7px; height:7px;
+    border-radius:50%;
+    background:#565b6b;
+  }
   .dot.interactive{background:#d1a24a;}
+
+  .btn{
+    -webkit-app-region:no-drag;
+    cursor:pointer;
+    font:inherit;
+    font-size:10px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    padding:3px 9px;
+    margin-left:8px;
+    border-radius:5px;
+    border:1px solid rgba(255,255,255,0.15);
+    background:rgba(255,255,255,0.06);
+    color:var(--text);
+    flex:none;
+  }
+  .btn:hover{background:rgba(255,255,255,0.14);}
+  .btn:disabled{opacity:.5; cursor:default;}
+  .btn.running{color:var(--dmg); border-color:rgba(226,73,61,0.45);}
 
   .rows{padding:2px 10px 10px; overflow-y:auto; flex:1;}
   .row{margin:5px 0;}
@@ -49,24 +79,112 @@
 
   .empty{padding:14px 12px; font-size:11.5px; color:var(--muted); text-align:center;}
   .hint{padding:0 12px 10px; font-size:9.5px; color:var(--muted); text-align:center; opacity:.75;}
+
+  .resize-edge{
+    -webkit-app-region:no-drag;
+    position:absolute;
+    left:6px; right:6px;
+    height:6px;
+    cursor:ns-resize;
+    z-index:10;
+  }
+  .resize-top{top:0;}
+  .resize-bottom{bottom:0;}
 </style>
 </head>
 <body>
   <div class="card">
+    <div class="resize-edge resize-top" id="resizeTop" title="Drag to resize"></div>
     <div class="head">
       <span class="brand">Ayenyzer</span>
       <span class="meta" id="meta">—</span>
-      <span class="dot" id="modeDot" title="Ctrl+Shift+O to toggle click-through"></span>
+      <button class="btn" id="mirrorBtn" title="Run wakfu-log-mirror.ps1">Start</button>
     </div>
     <div class="rows" id="rows">
       <div class="empty">Waiting for a fight… start Live mode in the config window.</div>
     </div>
+    <span class="dot" id="modeDot" title="Ctrl+Shift+O to toggle click-through"></span>
+    <div class="resize-edge resize-bottom" id="resizeBottom" title="Drag to resize"></div>
   </div>
 
 <script>
   const rowsEl = document.getElementById('rows');
   const metaEl = document.getElementById('meta');
   const modeDot = document.getElementById('modeDot');
+  const mirrorBtn = document.getElementById('mirrorBtn');
+
+  function renderMirrorBtn(running){
+    mirrorBtn.textContent = running ? 'Stop' : 'Start';
+    mirrorBtn.classList.toggle('running', running);
+  }
+  window.api.getMirrorStatus().then(s => renderMirrorBtn(s.running));
+  window.api.onMirrorStatus((s) => renderMirrorBtn(s.running));
+
+  mirrorBtn.addEventListener('click', async () => {
+    mirrorBtn.disabled = true;
+    try{
+      if(mirrorBtn.classList.contains('running')){
+        await window.api.stopMirror();
+      }else{
+        await window.api.startMirror();
+        // Also kicks off Live mode in the config window (native file
+        // picker to choose the mirrored log to watch), so Start alone
+        // gets both the mirror script and Live mode running.
+        window.api.requestStartWatching();
+      }
+    }finally{
+      mirrorBtn.disabled = false;
+    }
+  });
+
+  mirrorBtn.addEventListener('mouseenter', () => window.api.setOverlayHover(true));
+  mirrorBtn.addEventListener('mouseleave', () => window.api.setOverlayHover(false));
+
+  // Vertical resize from the top and bottom edges. Native OS edge-resize on
+  // this window is unreliable for top/bottom on Windows (frameless +
+  // transparent + always-on-top windows commonly lose vertical resize while
+  // left/right keep working), so these handles compute the new bounds
+  // themselves and push them straight to the window instead of relying on
+  // the native resize border.
+  function setupResizeEdge(el, edge){
+    let dragging = false;
+    let startScreenY = 0;
+    let startBounds = null;
+
+    el.addEventListener('mouseenter', () => { if(!dragging) window.api.setOverlayHover(true); });
+    el.addEventListener('mouseleave', () => { if(!dragging) window.api.setOverlayHover(false); });
+
+    el.addEventListener('mousedown', async (e) => {
+      dragging = true;
+      startScreenY = e.screenY;
+      startBounds = await window.api.getOverlayBounds();
+      window.api.setOverlayHover(true);
+      e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if(!dragging || !startBounds) return;
+      const deltaY = e.screenY - startScreenY;
+      let { x, y, width, height } = startBounds;
+      if(edge === 'top'){
+        const newHeight = Math.max(120, height - deltaY);
+        y = y + (height - newHeight);
+        height = newHeight;
+      }else{
+        height = Math.max(120, height + deltaY);
+      }
+      window.api.setOverlayBounds({ x, y, width, height });
+    });
+
+    window.addEventListener('mouseup', () => {
+      if(!dragging) return;
+      dragging = false;
+      startBounds = null;
+      window.api.setOverlayHover(false);
+    });
+  }
+  setupResizeEdge(document.getElementById('resizeTop'), 'top');
+  setupResizeEdge(document.getElementById('resizeBottom'), 'bottom');
 
   window.api.onOverlayMode((interactive) => {
     modeDot.classList.toggle('interactive', interactive);

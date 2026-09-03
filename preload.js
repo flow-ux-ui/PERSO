@@ -15,4 +15,25 @@ contextBridge.exposeInMainWorld('api', {
   sendOverlaySnapshot: (data) => ipcRenderer.send('overlay:snapshot', data),
   onOverlayUpdate: (cb) => ipcRenderer.on('overlay:update', (_event, data) => cb(data)),
   onOverlayMode: (cb) => ipcRenderer.on('overlay:mode', (_event, interactive) => cb(interactive)),
+
+  // Start/stop the wakfu-log-mirror.ps1 helper script (overlay Start/Stop button).
+  startMirror: () => ipcRenderer.invoke('mirror:start'),
+  stopMirror: () => ipcRenderer.invoke('mirror:stop'),
+  getMirrorStatus: () => ipcRenderer.invoke('mirror:getStatus'),
+  onMirrorStatus: (cb) => ipcRenderer.on('mirror:status', (_event, data) => cb(data)),
+
+  // Lets overlay controls (e.g. the Start/Stop button) temporarily suspend
+  // click-through while the cursor hovers them, so they stay clickable even
+  // when the overlay itself is in default click-through mode.
+  setOverlayHover: (hovering) => ipcRenderer.send('overlay:hover', hovering),
+
+  // Overlay Start button -> config window's "Watch File (Live)" flow.
+  requestStartWatching: () => ipcRenderer.send('overlay:requestStartWatching'),
+  onRequestStartWatching: (cb) => ipcRenderer.on('config:startWatching', () => cb()),
+
+  // Manual vertical resize (native top/bottom edge resize is unreliable on
+  // frameless/transparent/always-on-top windows) — the resize handles read
+  // the current bounds, then push new ones as the user drags.
+  getOverlayBounds: () => ipcRenderer.invoke('overlay:getBounds'),
+  setOverlayBounds: (bounds) => ipcRenderer.send('overlay:setBounds', bounds),
 });

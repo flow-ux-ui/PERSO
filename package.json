@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "package:win": "electron-packager . Ayenyzer --platform=win32 --arch=x64 --out=dist --overwrite --icon=build/icon.ico",
+    "package:win": "electron-packager . Ayenyzer --platform=win32 --arch=x64 --out=dist --overwrite",
     "package:linux": "electron-packager . Ayenyzer --platform=linux --arch=x64 --out=dist --overwrite"
   },
   "devDependencies": {

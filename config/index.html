@@ -958,6 +958,12 @@ els.watchBtn && els.watchBtn.addEventListener('click', startWatching);
 els.stopWatchBtn && els.stopWatchBtn.addEventListener('click', stopWatching);
 els.resetWatchBtn && els.resetWatchBtn.addEventListener('click', resetWatchTracking);
 
+// Overlay's Start button asks us to kick off Live mode too — same flow as
+// clicking "Watch File (Live)" here, native file picker included.
+window.api && window.api.onRequestStartWatching && window.api.onRequestStartWatching(() => {
+  if(!watchPath) startWatching();
+});
+
 // ---- Hide character(s): clickable × buttons in the roster/table, kept in
 // sync with the "Hide damage dealt by" text field (and vice versa). Since
 // hiding changes what processLines even records in the first place, any
